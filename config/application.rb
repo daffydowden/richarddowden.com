@@ -38,5 +38,11 @@ module RicharddowdenCom
 
     # Configure sensitive parameters which will be filtered from the log file.
     config.filter_parameters += [:password]
+
+		# Generators
+		config.generators do |g| 
+			g.template_engine :haml
+			g.test_framework :rspec, :fixture => false
+		end
   end
 end
