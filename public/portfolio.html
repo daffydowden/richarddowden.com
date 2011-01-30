@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+
+  <!-- www.phpied.com/conditional-comments-block-downloads/ -->
+  <!--[if IE]><![endif]-->
+
+  <!-- Always force latest IE rendering engine (even in intranet) & Chrome Frame 
+       Remove this if you use the .htaccess -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+  <title>richarddowden.com | portfolio</title>
+  <meta name="description" content="">
+  <meta name="author" content="">
+
+  <!--  Mobile Viewport Fix
+        j.mp/mobileviewport & davidbcalhoun.com/2010/viewport-metatag 
+  device-width : Occupy full width of the screen in its current orientation
+  initial-scale = 1.0 retains dimensions instead of zooming out if page height > device height
+  maximum-scale = 1.0 retains dimensions instead of zooming in if page width < device width
+  -->
+  <meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0;">
+
+
+  <!-- Place favicon.ico and apple-touch-icon.png in the root of your domain and delete these references -->
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+
+  <!-- CSS : implied media="all" -->
+  <link rel="stylesheet" href="stylesheets/style.css?v=1">
+
+  <!-- For the less-enabled mobile browsers like Opera Mini -->
+  <link rel="stylesheet" media="handheld" href="stylesheets/handheld.css?v=1">
+
+ 
+  <!-- All JavaScript at the bottom, except for Modernizr which enables HTML5 elements & feature detects -->
+  <script src="javascripts/modernizr-1.5.min.js"></script>
+
+</head>
+
+<!-- paulirish.com/2008/conditional-stylesheets-vs-css-hacks-answer-neither/ -->
+
+<!--[if lt IE 7 ]> <body class="ie6"> <![endif]-->
+<!--[if IE 7 ]>    <body class="ie7"> <![endif]-->
+<!--[if (gte IE 8)|!(IE)]><!-->
+  <body>
+  <img src="images/main-bg.jpg" alt="" class="background" />
+<!--<![endif]-->
+
+  <div id="container">
+    <header>
+      <a id="logo" title="Richard Dowden - goto home page" href="/index.html"><img src="images/richarddowden-heading.png" width="390" height="50" alt="Richard Dowden"></a>
+      <nav>
+        <ul>
+          <li><a href="index.html" title="Home">Home</a></li>
+          <li><a href="about.html" title="About">About</a></li>
+          <li><a class="active" href="portfolio.html" title="Portfolio">Portfolio</a></li>
+          <li><a href="blog.html" title="Blog">Blog</a></li>
+          <li><a href="contact.html" title="Contact">Contact</a></li>
+        </ul>
+      </nav>
+    </header>
+    
+    <div id="main" class="dark cornered-box">
+      <h1 class="hidden">Portfolio</h1>
+      
+      <p class="section-description">Here's a selection of projects that I've been working on recently.</p>
+      
+      <div class="portfolio-items">
+        <div class="item">
+          <img src="images/portfolio/portfolio_ctm.jpg" width="284" height="137" alt="ComparetheMeerkat">
+          <h2>ComparetheMarket</h2>
+          <h3>ComparetheMeerkat</h3>
+          <p>I helped create the phenomenon that is Aleksandr the Meerkat, for the ComparetheMeerkat campaign. 
+            I've worked on this award winning account from December 2008, till present. I've been responsible for the 
+            initial html/js build, all the way through to the current incarnation of the site, which utilises both Drupal and Ruby. </p>
+          <a href="http://www.comparethemeerkat.com">View</a>
+        </div> 
+        <div class="item">
+          <img src="images/portfolio/portfolio_ducks.jpg" width="284" height="137" alt="Portfolio Ducks">
+          <h2>O2</h2>
+          <h3>Top-up Surprises</h3>
+          <p>I coded all of the javascript on this microsite, and worked in collaboration with another developer to produce the html. 
+            The site makes extensive use of the jQuery framework, to provide an experience which degrades gracefully in the absence of flash or js. 
+            Depending on the user journey, additional content is displayed through ajax calls.</p>
+          <a href="http://topupsurprises.o2.co.uk">View</a>
+        </div>
+        <div class="item">
+          <img src="images/portfolio/portfolio_dodo.jpg" width="284" height="137" alt="Portfolio Dodo">
+          <h2>Coca-Cola</h2>
+          <h3>5Alive - Dancing Dodo</h3>
+          <p>A Facebook fan page which I created the html, css and php for the landing page. The application pulls in the latest 
+            user generated content via the YouTube and Facebook apis. I also worked with Coca-cola's hosting provider, and a third party 
+            developer, to ensure the main application was deployed successfully on the Coca-cola platform.</p>
+          <a href="http://www.dancingdodo.co.uk">View</a>
+        </div>
+      
+        <div class="item">
+          <img src="images/portfolio/portfolio_vccp.jpg" width="284" height="137" alt="Portfolio Vccp">
+          <h2>VCCP</h2>
+          <h3>vccp.com</h3>
+          <p>A key requirement for this site was that it had to be updated by non-technical members of staff, as a result the site 
+            was built using the Drupal CMS platform. I created the Drupal template, and wrote the additional php functionality necessary 
+            for the many varied sections within the website.</p>
+          <a href="http://www.vccp.com">View</a>
+        </div>
+        <div class="item">
+          <img src="images/portfolio/portfolio_metro.jpg" width="284" height="137" alt="Portfolio Metro">
+          <h2>Metro</h2>
+          <h3>Delivers</h3>
+          <p>The Delivers campaign allowed a user to create their own custom pdf file containing individual case studies. 
+            Using the Ruby framework Sinatra, I wrote an elegant and simple application that took the user's desired files from the 
+            flash front-end, and then stitched together a pdf file on the fly, before returning this to the user.</p>
+          <a href="http://metrodelivers.metro-advertising.co.uk/">View</a>
+        </div>
+        <div class="item">
+          <img src="images/portfolio/portfolio_arcoxia.jpg" width="284" height="137" alt="Portfolio Arcoxia">
+          <h2>Merck</h2>
+          <h3>Arcoxia Game</h3>
+          <p>The Arcoxia game provided medical professionals with a fun way of learning about a new drug created by Merck. 
+            I used the Ruby micro-framework Sinatra as a back-end to the flash game, in order to track submitted highscores, 
+            and provide various outputs of these in xml for flash to display.</p>
+          <!--<a href="#">View</a>-->
+        </div>
+      
+        <div class="item">
+          <img src="images/portfolio/portfolio_msa.jpg" width="284" height="137" alt="Portfolio Msa">
+          <h2>Microsoft</h2>
+          <h3>Cannes</h3>
+          <p>The Microsoft Advertising Cannes micro-site pulled in content from multiple sources 
+            throughout the Cannes Advertising Awards and aggregated these into a single stream. A key requirement from the 
+            client was that no server-side processing was available on the hosting platform. As a result, we used  
+            third party apis where available, to pull the content onto the site via Javascript; A proxy server was also used to 
+            aggregate any additional content, and this was then pulled on the site via json.</p>
+          <!--<a href="#">View</a>-->
+        </div>
+        <!--<div class="item">
+          <img src="" alt="" />
+          <h2>Title</h2>
+          <p>Blurb</p>
+          <a href="#">View</a>
+        </div>
+        <div class="item">
+          <img src="" alt="" />
+          <h2>Title</h2>
+          <p>Blurb</p>
+          <a href="#">View</a>
+        </div>-->
+      </div>
+    </div>
+    
+    <footer>
+      <p>Copyright &copy; 2010 Richard Dowden</p>
+    </footer>
+  </div> <!--! end of #container -->
+
+
+  <!-- Javascript at the bottom for fast page loading -->
+
+  <!-- Grab Google CDN's jQuery. fall back to local if necessary -->
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+  <script>!window.jQuery && document.write('<script src="javascripts/jquery-1.4.2.min.js"><\/script>')</script>
+
+  <!-- Fonts -->
+  <script src="javascripts/cufon-yui.js" type="text/javascript" charset="utf-8"></script>
+  <script src="javascripts/fonts/Avenir_350-Avenir_700.font.js" type="text/javascript" charset="utf-8"></script>
+  <script type="text/javascript" charset="utf-8">
+    $(document).ready(function(){
+      Cufon.replace('h1, h2, nav ul > li a');
+    });
+  </script>
+
+  <!--[if lt IE 7 ]>
+    <script src="javascripts/dd_belatedpng.js?v=1"></script>
+    <script type="text/javascript">
+      DD_belatedPNG.fix('#logo img, .social-media li a');
+    </script>
+  <![endif]-->
+  <!--[if lte IE 7 ]>
+    <script type="text/javascript">
+      $(document).ready(function(){$('.portfolio-items .item:nth-child(3n+1)').css('marginRight', '0');});
+    </script>
+  <![endif]-->
+  
+  <!-- yui profiler and profileviewer - remove for production -->
+  <!--<script src="javascripts/profiling/yahoo-profiling.min.js?v=1"></script>
+  <script src="javascripts/profiling/config.js?v=1"></script>-->
+  <!-- end profiling code -->
+
+  <script>
+  var _gaq = [['_setAccount', 'UA-18394181-1'], ['_trackPageview']];
+  (function(d, t) {
+   var g = d.createElement(t),
+       s = d.getElementsByTagName(t)[0];
+   g.async = true;
+   g.src = '//www.google-analytics.com/ga.js';
+   s.parentNode.insertBefore(g, s);
+  })(document, 'script');
+ </script>
+  
+</body>
+</html>
