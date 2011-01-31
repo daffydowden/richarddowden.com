@@ -200,7 +200,7 @@ button {  width: auto; overflow: visible; }
  /* Primary Styles
     Author: Richard Dowden
  */
-	body{background:#000 url('../images/main-bg.jpg') no-repeat top center;}
+	body{background:#000 url('/images/main-bg.jpg') no-repeat top center;}
 	img.background{height: auto;left: 0px;min-height: 100%;min-width: 1566px;position: fixed;top: 0px;width: 100%;z-index:0;}
 	#container{width:960px;margin:0 auto;position:relative;z-index:1;}
 	
@@ -268,7 +268,7 @@ button {  width: auto; overflow: visible; }
 	.side .social-media{margin:0;}
 	.social-media{margin:0 0 16px 0;overflow:hidden;}
 	.social-media li{display:inline;margin-right:16px;float:left;}
-	.social-media li a{width:30px;height:30px;text-indent:-900em;background:url('../images/icons-sprite.png') no-repeat top left;overflow:hidden;display:block;}
+	.social-media li a{width:30px;height:30px;text-indent:-900em;background:url('/images/icons-sprite.png') no-repeat top left;overflow:hidden;display:block;}
 		.social-media li .rss{background-position:-8px -8px;}
 		.social-media li .twitter{background-position:-60px -8px;}
 		.social-media li .facebook{background-position:-113px -8px;}
@@ -277,7 +277,7 @@ button {  width: auto; overflow: visible; }
 		.social-media li .lastfm{background-position:-975px -8px;}
 		.social-media li .foursq{background-position:-580px -8px;}
 	
-	.tel, .email{background:url('../images/icons-sprite.png') no-repeat top left;padding-left:50px;}
+	.tel, .email{background:url('/images/icons-sprite.png') no-repeat top left;padding-left:50px;}
 	.tel{background-position:-6px -80px;margin-bottom:12px;}
 	.email{background-position:-7px -145px;}
 	

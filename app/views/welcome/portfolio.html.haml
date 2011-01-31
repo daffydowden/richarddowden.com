@@ -1,0 +1,52 @@
+#main{:class => ['dark','cornered-box']}
+	%h1.hidden Portfolio
+
+	%p.section-description Here's a selection of projects that I've been working on recently.
+
+	.portfolio-items
+		.item
+			%img{:src => '/images/portfolio/portfolio_ctm.jpg', :width => '284', :height => '137', :alt => 'ComparetheMeerkat'}
+			%h2 ComparetheMarket
+			%h3 ComparetheMeerkat
+			%p< I helped create the phenomenon that is Aleksandr the Meerkat, for the ComparetheMeerkat campaign. I've worked on this award winning account from December 2008, till Nov 2010. I've been responsible for the initial html/js build, all the way through to the current incarnation of the site, which utilises both Drupal and Ruby.
+			%a{:href => 'http://www.comparethemeerkat.com'}View
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_ducks.jpg', :width => '284', :height => '137', :alt => 'Portfolio Ducks'}
+			%h2 O2
+			%h3 Top-up Surprises
+			%p< I coded all of the javascript on this microsite, and worked in collaboration with another developer to produce the html. The site makes extensive use of the jQuery framework, to provide an experience which degrades gracefully in the absence of flash or js. Depending on the user journey, additional content is displayed through ajax calls.
+			%a{:href => 'http://topupsurprises.o2.co.uk'}View
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_dodo.jpg', :width => '284', :height => '137', :alt => 'Portfolio Dodo'}
+			%h2 Coca-Cola
+			%h3 5Alive - Dancing Dodo
+			%p< A Facebook fan page which I created the html, css and php for the landing page. The application pulls in the latest user generated content via the YouTube and Facebook apis. I also worked with Coca-cola's hosting provider, and a third party developer, to ensure the main application was deployed successfully on the Coca-cola platform.
+			%a{:href => 'http://www.dancingdodo.co.uk'}View
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_vccp.jpg', :width => '284', :height => '137', :alt => 'Portfolio VCCP'}
+			%h2 VCCP
+			%h3 vccp.com
+			%p< A key requirement for this site was that it had to be updated by non-technical members of staff, as a result the site was built using the Drupal CMS platform. I created the Drupal template, and wrote the additional php functionality necessary for the many varied sections within the website.
+			%a{:href => 'http://www.vccp.com'}View
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_metro.jpg', :width => '284', :height => '137', :alt => 'Portfolio Metro'}
+			%h2 Metro
+			%h3 Delivers
+			%p< The Delivers campaign allowed a user to create their own custom pdf file containing individual case studies. Using the Ruby framework Sinatra, I wrote an elegant and simple application that took the user's desired files from the flash front-end, and then stitched together a pdf file on the fly, before returning this to the user.
+			%a{:href => 'http://metrodelivers.metro-advertising.co.uk/'}View
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_arcoxia.jpg', :width => '284', :height => '137', :alt => 'Portfolio Arcoxia'}
+			%h2 Merck
+			%h3 Arcoxia Game
+			%p< The Arcoxia game provided medical professionals with a fun way of learning about a new drug created by Merck. I used the Ruby micro-framework Sinatra as a back-end to the flash game, in order to track submitted highscores, and provide various outputs of these in xml for flash to display.
+
+		.item
+			%img{:src => '/images/portfolio/portfolio_msa.jpg', :width => '284', :height => '137', :alt => 'Portfolio MSA'}
+			%h2 Microsoft
+			%h3 Cannes
+			%p The Microsoft Advertising Cannes micro-site pulled in content from multiple sources throughout the Cannes Advertising Awards and aggregated these into a single stream. A key requirement from the client was that no server-side processing was available on the hosting platform. As a result, we used third party apis where available, to pull the content onto the site via Javascript; A proxy server was also used to aggregate any additional content, and this was then pulled on the site via json.
