@@ -1,19 +1,25 @@
 RicharddowdenCom::Application.routes.draw do
-  get "portfolio/index"
-
   # The priority is based upon order of creation:
   # first created -> highest priority.
 
   # Sample of regular route:
   #   match 'products/:id' => 'catalog#view'
   # Keep in mind you can assign values other than :controller and :action
-	match 'index.html' => 'page#index'
-  match 'about.html' => 'page#about'
-  match 'blog.html' => 'page#blog'
-  match 'contact.html' => 'page#contact'
 
-  match 'portfolio.html' => 'portfolio#index'
+  # Old routes
+	match 'index.html', :to => redirect('/')
+  match 'about.html', :to => redirect('/about')
+  match 'blog.html', :to => redirect('/blog')
+  match 'contact.html', :to => redirect('/contact')
+  match 'portfolio.html', :to => redirect('/portfolio')
 
+  # Page routes
+  get 'index' => 'page#index'
+  get 'about' => 'page#about'
+  get 'blog' => 'page#blog'
+  get 'contact' => 'page#contact'
+  # Portfolio Routes
+  get 'portfolio' => 'portfolio#index'
 
   # Sample of named route:
   #   match 'products/:id/purchase' => 'catalog#purchase', :as => :purchase
