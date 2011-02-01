@@ -17,8 +17,8 @@
 			j.mp/mobileviewport & davidbcalhoun.com/2010/viewport-metatag 
 		%meta{:name => 'viewport', :content => 'width=device-width; initial-scale=1.0; maximum-scale=1.0;'}
 
-		= stylesheet_link_tag :all, :media => :all
-		= stylesheet_link_tag 'handheld', :media => :handheld
+		= stylesheet_link_tag 'style', :media => :all
+		= stylesheet_link_tag 'handheld', :media => 'handheld'
 		-# Javascript at bottom of the page, except modernizr
 		= javascript_include_tag 'modernizr-1.5.min.js'
 		= csrf_meta_tag

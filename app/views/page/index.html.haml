@@ -2,9 +2,9 @@
 	#home-showcase
 		#window
 			%img{:src => '/images/portfolio/frontpage_meerkat.jpg', :width => '940', :height => '324', :alt => 'Frontpage Meerkat'}
-			%p.description< 
-				ComparetheMeerkat.com - 
-				%a{:href => 'portfolio.html'} view more
+		%p.description< 
+			ComparetheMeerkat.com - 
+			%a{:href => 'portfolio.html'} view more
 	%p{:class => ['dark','border']}<
 		I'm Richard Dowden, a web-developer residing in London. I'm still working on this site, but in the spirit of agile development I thought it best to release something. Besides it can't harm anyone can it? Unless you're browsing in ie6 that is&hellip;
 	.boxes-3
@@ -12,20 +12,9 @@
 			%h2 Last.fm
 			%p An album, or an artist, will go here&hellip;
 		.box
-			%h2 Tweets
-			%p My twitter twaddle will go here&hellip;
+			%h2.tweets Tweets
+			%h3.twitter-user @richarddowden
+			%p Twitter content
 		.box
 			%h2 Social Networks
-			%ul.social-media
-				%li
-					%a.twitter{:title => 'twitter', :href => 'http://twitter.com/richarddowden'}>Twitter
-				%li
-					%a.facebook{:title => 'Facebook Profile', :href => 'http://facebook.com/richard.dowden'}>Facebook
-				%li
-					%a.flickr{:title => 'My Flickr Photos', :href => 'http://flickr.com/people/daffy/'}>Flickr
-				%li
-					%a.linkedin{:title => 'LinkedIn Profile', :href => 'http://uk.linkedin.com/in/richarddowden'}>LinkedIn
-				%li
-					%a.lastfm{:title => 'Last.fm profile', :href => 'http://last.fm/user/daffy_dowden'}>Last.fm
-				%li
-					%a.foursq{:title => 'FourSquare profile', :href => 'http://foursquare.com/user/-58044'}>Foursquare
+			= render 'shared/social_media'
