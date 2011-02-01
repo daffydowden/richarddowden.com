@@ -255,6 +255,11 @@ button {  width: auto; overflow: visible; }
 		.boxes-3 .box{float:left;color:rgb(119,119,119);text-shadow:0 1px 1px rgb(0,0,0);line-height:167%;width:280px;padding:10px 10px 20px;margin-right:20px;background: rgb(0,0,0);background:rgba(0,0,0,0.6);}
 		.boxes-3 .box:last-child{margin-right:0;}
 	
+	.twitter-feed{}
+		.twitter-feed h2{margin-bottom:2px;}
+		.twitter-feed h3, .twitter-feed .twitter-anywhere-user{color:#fff;margin-bottom:6px;}
+		#twitter_post{border-top:1px solid #333;border-bottom:1px solid #333;padding:6px 0;margin-bottom:12px;}
+
 	.portfolio-items{padding:10px;overflow:hidden;}
 	.item{width:290px;overflow:hidden;float:left;margin:0 22px 0 0;padding-bottom:60px;}
 	.item:nth-child(3n){margin-right:0;}

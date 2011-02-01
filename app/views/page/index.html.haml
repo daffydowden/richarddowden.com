@@ -11,10 +11,11 @@
 		.box
 			%h2 Last.fm
 			%p An album, or an artist, will go here&hellip;
-		.box
-			%h2.tweets Tweets
+		.box.twitter-feed
+			%h2 Tweets
 			%h3.twitter-user @richarddowden
-			%p Twitter content
+			%p#twitter_post Loading...
+			%div#follow-richarddowden
 		.box
 			%h2 Social Networks
 			= render 'shared/social_media'

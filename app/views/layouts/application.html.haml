@@ -19,8 +19,9 @@
 
 		= stylesheet_link_tag 'style', :media => :all
 		= stylesheet_link_tag 'handheld', :media => 'handheld'
-		-# Javascript at bottom of the page, except modernizr
+		-# Javascript at bottom of the page, except modernizr & twitter anywhere... grr
 		= javascript_include_tag 'modernizr-1.5.min.js'
+		%script{:src => 'http://platform.twitter.com/anywhere.js?id=t3HKIkg9axKR5S6GfKxdw&v=1'}
 		= csrf_meta_tag
 
 	%body
@@ -53,8 +54,22 @@
 			:javascript
 				$(document).ready(function(){
 					Cufon.replace('h2, nav ul > li a');
+
+					$.getJSON(
+						'https://twitter.com/status/user_timeline/richarddowden.json?count=1&include_rts=false&trim_user=true&callback=?',
+						function(data){
+							$('#twitter_post').html(data[0].text);
+							T.hovercards();
+						}
+					);
+
+					// Twitter
+					twttr.anywhere(function (T) {
+						T.hovercards();
+						T('#follow-richarddowden').followButton("richarddowden");
+					});
 				});
-			:javascript
+				// Google Analytics
 				var _gaq = [['_setAccount', 'UA-18394181-1'], ['_trackPageview']];
 				(function(d, t) {
 					var g = d.createElement(t),
