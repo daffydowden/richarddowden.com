@@ -38,7 +38,9 @@ export function layout(input: LayoutInput): LayoutResult {
   // Heavy condensed faces are roughly 0.5 width-to-height.
   const rawFontSize = approxPxPerChar / 0.5;
   const linesShown = lines.length;
-  const verticalCap = (viewportHeight - padding * 2) / linesShown;
+  // Match seed.ts's lineHeight = fontSizePx * 1.15 so the rasterized text
+  // never overflows the canvas vertically.
+  const verticalCap = (viewportHeight - padding * 2) / (linesShown * 1.15);
   const target = Math.min(rawFontSize, verticalCap);
   const fontSizePx = Math.max(0, Math.floor(target / cellSize) * cellSize);
 

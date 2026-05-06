@@ -41,7 +41,9 @@ export function rasterizeSeed(input: SeedInput): Uint8Array {
   ctx.textAlign = 'left';
   ctx.font = `400 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
 
-  const lineHeight = fontSizePx * 0.85;
+  // 1.15: fontSizePx is the cap height; 1.15 leaves a generous gap
+  // between stacked lines so the two-line layout breathes.
+  const lineHeight = fontSizePx * 1.15;
   const totalTextHeight = lineHeight * lines.length;
   const yStart = Math.floor((height - totalTextHeight) / 2);
   for (let i = 0; i < lines.length; i++) {
