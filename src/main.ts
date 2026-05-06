@@ -40,7 +40,7 @@ const THEMES: Theme[] = [
     mark: 'oklch(18% 0.012 165)',
     fontFamily: "'Anton', 'Impact', 'Helvetica Neue', sans-serif",
     alphabet: ['.', ':', '-', '=', '+', '*', '#', '%'],
-    rule: 'conway',
+    rule: 'custom',
   },
   {
     field: 'oklch(86% 0.060 90)',
