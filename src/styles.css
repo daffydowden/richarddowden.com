@@ -1,3 +1,12 @@
+@font-face {
+  font-family: 'Anton';
+  src: url('/fonts/anton-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00B7;
+}
+
 :root {
   --field: oklch(86% 0.018 165);   /* dusty celadon */
   --mark:  oklch(18% 0.012 165);   /* near-black, tinted toward field */

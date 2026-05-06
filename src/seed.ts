@@ -9,7 +9,7 @@ export interface SeedInput {
 }
 
 const DEFAULT_FONT_FAMILY =
-  "'Druk Wide Web', 'Compacta', 'Impact', 'Helvetica Neue', sans-serif";
+  "'Anton', 'Impact', 'Helvetica Neue', sans-serif";
 
 function defaultCreate(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -39,7 +39,7 @@ export function rasterizeSeed(input: SeedInput): Uint8Array {
   ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.font = `900 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
+  ctx.font = `400 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
 
   const lineHeight = fontSizePx * 0.85;
   const totalTextHeight = lineHeight * lines.length;

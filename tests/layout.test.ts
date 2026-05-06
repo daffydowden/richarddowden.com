@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { layout } from '../src/layout';
 
 describe('layout', () => {
-  it('returns single-line full name for ultrawide', () => {
-    const r = layout({ viewportWidth: 1920, viewportHeight: 1080 });
+  it('returns single-line full name for ultrawide (>=2400)', () => {
+    const r = layout({ viewportWidth: 2560, viewportHeight: 1080 });
     expect(r.copy).toBe('RICHARD DOWDEN');
     expect(r.lines).toEqual(['RICHARD DOWDEN']);
   });
@@ -11,6 +11,11 @@ describe('layout', () => {
   it('returns two stacked words for standard desktop', () => {
     const r = layout({ viewportWidth: 1024, viewportHeight: 768 });
     expect(r.copy).toBe('RICHARD DOWDEN');
+    expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
+  });
+
+  it('returns two stacked words for 1080p (1920x1080)', () => {
+    const r = layout({ viewportWidth: 1920, viewportHeight: 1080 });
     expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
   });
 
@@ -25,9 +30,14 @@ describe('layout', () => {
     expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
   });
 
-  it('uses one line at exactly 1280px (boundary)', () => {
-    const r = layout({ viewportWidth: 1280, viewportHeight: 720 });
+  it('uses one line at exactly 2400px (boundary)', () => {
+    const r = layout({ viewportWidth: 2400, viewportHeight: 1200 });
     expect(r.lines).toEqual(['RICHARD DOWDEN']);
+  });
+
+  it('uses two lines at exactly 2399px (boundary)', () => {
+    const r = layout({ viewportWidth: 2399, viewportHeight: 1200 });
+    expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
   });
 
   it('cellSize is integer px', () => {
@@ -36,18 +46,18 @@ describe('layout', () => {
     expect(r.cellSize).toBeGreaterThan(0);
   });
 
-  it('cellSize is consistent across breakpoints (8 or 12)', () => {
+  it('cellSize is consistent across breakpoints (16 or 24)', () => {
     const a = layout({ viewportWidth: 1024, viewportHeight: 768 });
     const b = layout({ viewportWidth: 1920, viewportHeight: 1080 });
-    expect([8, 12]).toContain(a.cellSize);
-    expect([8, 12]).toContain(b.cellSize);
+    expect([16, 24]).toContain(a.cellSize);
+    expect([16, 24]).toContain(b.cellSize);
   });
 
-  it('cellSize is 8 on retina (devicePixelRatio >= 2), 12 otherwise', () => {
+  it('cellSize is 16 on retina (devicePixelRatio >= 2), 24 otherwise', () => {
     const retina = layout({ viewportWidth: 1024, viewportHeight: 768, devicePixelRatio: 2 });
     const standard = layout({ viewportWidth: 1024, viewportHeight: 768, devicePixelRatio: 1 });
-    expect(retina.cellSize).toBe(8);
-    expect(standard.cellSize).toBe(12);
+    expect(retina.cellSize).toBe(16);
+    expect(standard.cellSize).toBe(24);
   });
 
   it('fontSizePx is an integer multiple of cellSize', () => {

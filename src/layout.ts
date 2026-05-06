@@ -13,7 +13,7 @@ export interface LayoutResult {
 
 export function layout(input: LayoutInput): LayoutResult {
   const { viewportWidth, viewportHeight, devicePixelRatio = 1 } = input;
-  const cellSize = devicePixelRatio >= 2 ? 8 : 12;
+  const cellSize = devicePixelRatio >= 2 ? 16 : 24;
 
   let copy: string;
   let lines: string[];
@@ -21,7 +21,7 @@ export function layout(input: LayoutInput): LayoutResult {
   if (viewportWidth < 600) {
     copy = 'R·D';
     lines = ['R', '·D'];
-  } else if (viewportWidth < 1280) {
+  } else if (viewportWidth < 2400) {
     copy = 'RICHARD DOWDEN';
     lines = ['RICHARD', 'DOWDEN'];
   } else {
