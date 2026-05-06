@@ -95,35 +95,34 @@ in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uState;       // R8: 1.0 alive, 0.5 dying, 0.0 dead
 uniform sampler2D uAtlas;       // RGBA atlas, glyphs side by side
+uniform sampler2D uGlyphMap;    // R8: glyph index (byte) per cell
 uniform vec2 uGridSize;         // cells across, cells down
 uniform float uAtlasLen;        // number of glyphs in atlas
 uniform vec3 uMarkColor;        // sRGB-linear of the mark color
-
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
 
 void main() {
   vec2 cell = floor(vUv * uGridSize);
   vec2 inCell = fract(vUv * uGridSize);
 
   // The seed was uploaded from a canvas (top-down rows) into a WebGL
-  // texture (bottom-up rows). Flip Y when sampling state so canvas
-  // top renders at screen top.
+  // texture (bottom-up rows). Flip Y when sampling so canvas top
+  // renders at screen top.
   vec2 cellFlipped = vec2(cell.x, uGridSize.y - 1.0 - cell.y);
-  vec2 uvState = (cellFlipped + 0.5) / uGridSize;
-  float state = texture(uState, uvState).r;
+  vec2 uvCell = (cellFlipped + 0.5) / uGridSize;
 
+  float state = texture(uState, uvCell).r;
   if (state < 0.25) discard;
 
-  float glyphIdx = floor(hash21(cell) * uAtlasLen);
+  // Glyph index per cell from the glyph map texture. R8 normalises
+  // 0..255 to 0..1, so we de-normalise by multiplying by 255 and
+  // floor-clamp to stay within the atlas.
+  float glyphIdx = floor(texture(uGlyphMap, uvCell).r * 255.0 + 0.5);
+  glyphIdx = min(glyphIdx, uAtlasLen - 1.0);
+
   float u = (glyphIdx + inCell.x) / uAtlasLen;
   float v = inCell.y;
   float alpha = texture(uAtlas, vec2(u, v)).a;
 
-  // Dying cells render at 50% opacity (only seen with 3-state rules).
   float opacity = state > 0.75 ? 1.0 : 0.5;
   outColor = vec4(uMarkColor, alpha * opacity);
 }

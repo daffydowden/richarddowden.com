@@ -11,38 +11,60 @@ import {
 } from './webgl';
 import { VS_QUAD, FS_RENDER, buildStepShader } from './shaders';
 import { startLifecycle, prefersReducedMotion, type LifecycleHandle } from './lifecycle';
+import {
+  ROMAN,
+  UNIVERS,
+  templateForLayout,
+  type FigletSet,
+} from './figlet-templates';
 
 interface Theme {
-  field: string;            // CSS color (oklch ok)
-  mark: string;             // CSS color
-  fontFamily: string;       // font-family stack including a fallback
-  alphabet: readonly string[]; // ASCII-art glyph alphabet for the cell render
+  field: string;
+  mark: string;
+  fontFamily: string;
+  alphabet: readonly string[];
+  /** When set, the seed is the figlet template (not a rasterized font),
+   *  and each cell renders the glyph that lives at that position in the
+   *  template — no random hashing. */
+  figlet?: FigletSet;
 }
 
 const THEMES: Theme[] = [
   {
-    // Density gradient: a clean punctuation halftone. Anton's
-    // condensed sans suits the typewriter feel.
     field: 'oklch(86% 0.018 165)',
     mark: 'oklch(18% 0.012 165)',
     fontFamily: "'Anton', 'Impact', 'Helvetica Neue', sans-serif",
     alphabet: ['.', ':', '-', '=', '+', '*', '#', '%'],
   },
   {
-    // Block dither: classic terminal halftone. The wider Bebas Neue
-    // cells give the block characters room to read as solid fills.
     field: 'oklch(80% 0.022 250)',
     mark: 'oklch(20% 0.014 250)',
     fontFamily: "'Bebas Neue', 'Impact', 'Helvetica Neue', sans-serif",
     alphabet: ['░', '▒', '▓', '█', '▌', '▐', '▀', '▄'],
   },
   {
-    // Decorative dingbats: stars and asterisks for the serif Abril
-    // Fatface — print-catalog ornament rather than terminal halftone.
     field: 'oklch(86% 0.060 90)',
     mark: 'oklch(22% 0.030 90)',
     fontFamily: "'Abril Fatface', 'Times New Roman', serif",
     alphabet: ['·', '∗', '✦', '✶', '✺', '❋', '✻', '✿'],
+  },
+  // Theme 3: figlet "Roman" — vintage mainframe printout. The
+  // glyphs are the literal characters from the figlet template, not
+  // randomly chosen.
+  {
+    field: 'oklch(82% 0.030 60)',         // warm muted ash
+    mark: 'oklch(20% 0.018 60)',
+    fontFamily: "'Anton', sans-serif",    // unused for figlet rendering
+    alphabet: ROMAN.alphabet,
+    figlet: ROMAN,
+  },
+  // Theme 4: figlet "Univers" — heavier, more rectilinear printout.
+  {
+    field: 'oklch(82% 0.020 290)',        // dusky lilac
+    mark: 'oklch(20% 0.018 290)',
+    fontFamily: "'Anton', sans-serif",
+    alphabet: UNIVERS.alphabet,
+    figlet: UNIVERS,
   },
 ];
 
@@ -75,13 +97,109 @@ function showFallback() {
   document.body.appendChild(img);
 }
 
+/**
+ * Hash-based glyph map: every cell gets a deterministic glyph index
+ * derived from its (x, y) position. Used by non-figlet themes.
+ */
+function buildHashGlyphMap(gridW: number, gridH: number, alphabetLen: number): Uint8Array {
+  const out = new Uint8Array(gridW * gridH);
+  for (let y = 0; y < gridH; y++) {
+    for (let x = 0; x < gridW; x++) {
+      // Cheap deterministic hash; mirrors the spirit of the original
+      // shader-side hash21 but lives in JS so the shader can stay
+      // texture-driven.
+      const h = Math.imul(x * 73856093 ^ y * 19349663, 0x5bd1e995);
+      out[y * gridW + x] = (h >>> 0) % alphabetLen;
+    }
+  }
+  return out;
+}
+
+interface SeedAndMap {
+  state: Uint8Array;     // 0 dead, 255 alive
+  glyphMap: Uint8Array;  // glyph index per cell
+  gridW: number;
+  gridH: number;
+  cellSize: number;
+}
+
+/**
+ * Figlet seed: the template defines both the alive/dead pattern and
+ * the per-cell glyph. Cell size scales with viewport so the template
+ * occupies ~80% of canvas width.
+ */
+function seedFromFiglet(
+  set: FigletSet,
+  layoutLines: readonly string[],
+  canvasWidth: number,
+  canvasHeight: number,
+  alphabet: readonly string[],
+): SeedAndMap {
+  const lines = templateForLayout(set, layoutLines);
+  const templateW = Math.max(...lines.map((l) => l.length));
+  const templateH = lines.length;
+
+  // Pick cellSize so the figlet template spans about 85% of the canvas
+  // width (or the height limit, whichever is smaller). Floor to even
+  // values for clean device-pixel alignment on retina.
+  const widthCell  = Math.floor((canvasWidth  * 0.92) / templateW);
+  const heightCell = Math.floor((canvasHeight * 0.80) / templateH);
+  let cellSize = Math.max(2, Math.min(widthCell, heightCell));
+  if (cellSize % 2 === 1) cellSize -= 1;
+
+  const gridW = Math.floor(canvasWidth / cellSize);
+  const gridH = Math.floor(canvasHeight / cellSize);
+
+  const state = new Uint8Array(gridW * gridH);
+  const glyphMap = new Uint8Array(gridW * gridH);
+
+  // Build a char → atlas index lookup.
+  const charToIdx = new Map<string, number>();
+  for (let i = 0; i < alphabet.length; i++) charToIdx.set(alphabet[i]!, i);
+
+  // Center the template inside the grid.
+  const ox = Math.floor((gridW - templateW) / 2);
+  const oy = Math.floor((gridH - templateH) / 2);
+
+  for (let ty = 0; ty < templateH; ty++) {
+    const row = lines[ty] ?? '';
+    for (let tx = 0; tx < row.length; tx++) {
+      const ch = row[tx]!;
+      if (ch === ' ') continue;
+      const gx = ox + tx;
+      const gy = oy + ty;
+      if (gx < 0 || gx >= gridW || gy < 0 || gy >= gridH) continue;
+      const i = gy * gridW + gx;
+      state[i] = 255;
+      glyphMap[i] = charToIdx.get(ch) ?? 0;
+    }
+  }
+
+  return { state, glyphMap, gridW, gridH, cellSize };
+}
+
 interface Run {
-  /** Render the T=0 frame and return immediately (no animation loop). */
   render: () => void;
-  /** Start the animation loop. Idempotent. */
   start: () => void;
-  /** Cancel the loop and release per-run GPU resources. */
   stop: () => void;
+}
+
+function uploadGlyphMap(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+  data: Uint8Array,
+): WebGLTexture {
+  const tex = gl.createTexture();
+  if (!tex) throw new Error('createTexture returned null');
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
 }
 
 function startRun(
@@ -99,20 +217,41 @@ function startRun(
   canvas.width = Math.floor(window.innerWidth * dpr);
   canvas.height = Math.floor(window.innerHeight * dpr);
 
-  const cellSize = layoutResult.cellSize;
-  const gridW = Math.floor(canvas.width / cellSize);
-  const gridH = Math.floor(canvas.height / cellSize);
-  const seedW = gridW * cellSize;
-  const seedH = gridH * cellSize;
+  let state: Uint8Array;
+  let glyphMap: Uint8Array;
+  let gridW: number;
+  let gridH: number;
+  let cellSize: number;
 
-  const initial = rasterizeSeed({
-    lines: layoutResult.lines,
-    width: seedW,
-    height: seedH,
-    fontSizePx: layoutResult.fontSizePx,
-    cellSize,
-    fontFamily: theme.fontFamily,
-  });
+  if (theme.figlet) {
+    const seed = seedFromFiglet(
+      theme.figlet,
+      layoutResult.lines,
+      canvas.width,
+      canvas.height,
+      theme.alphabet,
+    );
+    state = seed.state;
+    glyphMap = seed.glyphMap;
+    gridW = seed.gridW;
+    gridH = seed.gridH;
+    cellSize = seed.cellSize;
+  } else {
+    cellSize = layoutResult.cellSize;
+    gridW = Math.floor(canvas.width / cellSize);
+    gridH = Math.floor(canvas.height / cellSize);
+    const seedW = gridW * cellSize;
+    const seedH = gridH * cellSize;
+    state = rasterizeSeed({
+      lines: layoutResult.lines,
+      width: seedW,
+      height: seedH,
+      fontSizePx: layoutResult.fontSizePx,
+      cellSize,
+      fontFamily: theme.fontFamily,
+    });
+    glyphMap = buildHashGlyphMap(gridW, gridH, theme.alphabet.length);
+  }
 
   const markColor = readMarkColorFromCSS();
   const markRgbCss = `rgb(${markColor.map((c) => Math.round(c * 255)).join(',')})`;
@@ -142,13 +281,14 @@ function startRun(
 
   let ping: ReturnType<typeof createPingPong>;
   try {
-    ping = createPingPong(gl, gridW, gridH, initial);
+    ping = createPingPong(gl, gridW, gridH, state);
   } catch (e) {
     console.error('ping-pong setup failed:', e);
     showFallback();
     return null;
   }
   const atlasTex = uploadTexture(gl, atlas.canvas as TexImageSource);
+  const glyphMapTex = uploadGlyphMap(gl, gridW, gridH, glyphMap);
 
   function bindQuad(program: WebGLProgram) {
     const loc = gl.getAttribLocation(program, 'aPos');
@@ -185,6 +325,9 @@ function startRun(
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, atlasTex);
     gl.uniform1i(gl.getUniformLocation(renderProgram, 'uAtlas'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, glyphMapTex);
+    gl.uniform1i(gl.getUniformLocation(renderProgram, 'uGlyphMap'), 2);
     gl.uniform2f(gl.getUniformLocation(renderProgram, 'uGridSize'), gridW, gridH);
     gl.uniform1f(gl.getUniformLocation(renderProgram, 'uAtlasLen'), atlas.alphabetLength);
     gl.uniform3f(
@@ -202,6 +345,7 @@ function startRun(
     gl.deleteProgram(stepProgram);
     gl.deleteProgram(renderProgram);
     gl.deleteTexture(atlasTex);
+    gl.deleteTexture(glyphMapTex);
     gl.deleteTexture(ping.read.tex);
     gl.deleteTexture(ping.write.tex);
     gl.deleteFramebuffer(ping.read.fb);
@@ -215,8 +359,6 @@ function startRun(
     start() {
       if (lifecycle) return;
       lifecycle = startLifecycle({
-        // Settling here is short because the user has just clicked. They
-        // know it's about to move; no need to hold the static frame.
         settlingMs: 250,
         initialGenerationsPerSecond: 6,
         minGenerationsPerSecond: 2,
@@ -259,14 +401,8 @@ async function boot() {
   let run: Run | null = startRun(canvas, gl, THEMES[themeIndex]!);
   run?.render();
 
-  // Reduced-motion: render T=0 of theme 0 and don't react to clicks.
-  // The page is calm. The visitor sees the name and that's it.
   if (prefersReducedMotion()) return;
 
-  // Each theme load goes through the same gate: render T=0, wait 5s
-  // or a click to begin the simulation. After the simulation is
-  // running, the next click switches to the next theme and re-enters
-  // the gate.
   let started = false;
   let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
 
