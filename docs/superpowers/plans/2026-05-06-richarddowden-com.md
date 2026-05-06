@@ -1,0 +1,2328 @@
+# richarddowden.com Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship a single-page personal site that renders the name "Richard Dowden" as ASCII-fill display type on a drenched mineral field, governed by a swappable cellular automaton running on the GPU.
+
+**Architecture:** Vanilla TypeScript + Vite, no framework. The page renders a canvas into which a WebGL2 fragment shader draws each frame. CA state lives in two ping-pong textures; a step shader advances generations, a render shader samples a glyph-atlas texture to draw an ASCII mark per living cell. The HTML shell ships a static rendering of the fully-formed name as CSS so reduced-motion and WebGL-unavailable visitors get the same quiet fallback. All visible text on the page is the name; no chrome, no UI controls.
+
+**Tech Stack:**
+- Build: Vite 5+, TypeScript 5+
+- Test: Vitest (unit), Playwright (e2e + a11y), @axe-core/playwright (a11y assertions)
+- Runtime: WebGL2, vanilla DOM, no framework
+- Linting: TypeScript strict mode, no separate lint step (size budget over ergonomics)
+- Deploy: static hosting (Cloudflare Pages or Vercel — confirm separately)
+
+**Spec:** [`docs/superpowers/specs/2026-05-06-richarddowden-com-design.md`](../specs/2026-05-06-richarddowden-com-design.md)
+**Strategic anchors:** [`PRODUCT.md`](../../../PRODUCT.md), [`DESIGN.md`](../../../DESIGN.md)
+
+---
+
+## File Structure
+
+Source files (each one job, each holdable in context):
+
+| Path | Responsibility |
+| --- | --- |
+| `index.html` | Single page. Field background, offscreen `<h1>`, canvas placeholder, static fallback rendering of the name (visible when JS is off / WebGL is missing / reduced motion). |
+| `src/main.ts` | Bootstrap. Reads viewport, runs feature detect, swaps fallback for canvas if WebGL2 + no reduced-motion, otherwise leaves fallback in place. |
+| `src/layout.ts` | Pure function: `(viewport, prefersReduced) → {copy, lines, cellSize, fontSizePx}`. Resolves the responsive layout decision. No DOM. |
+| `src/ca-rules.ts` | Pure CA rule definitions (Conway, Brian's Brain, Day-and-Night, Custom). Each rule = `(neighborhood) → state`. Used in tests; the GPU stepper expresses the same rules in GLSL. |
+| `src/seed.ts` | Rasterize text to a 1-bit alpha buffer using OffscreenCanvas + `getImageData`. Returns `Uint8Array` to upload as the initial CA texture. |
+| `src/glyph-atlas.ts` | Pre-render the ASCII alphabet (`. : ; + * # @ ░`, 8 cells) to a single horizontal-strip canvas. Returns the canvas to upload as a WebGL texture. |
+| `src/webgl.ts` | WebGL2 context creation, shader compile, program link, two ping-pong framebuffer-textures, glyph-atlas texture upload. Throws a typed error if any step fails. |
+| `src/shaders.ts` | GLSL strings for vertex (full-screen quad), step shader (CA stepper, rule by `#define`), render shader (samples state + glyph atlas). |
+| `src/lifecycle.ts` | Wraps `requestAnimationFrame`. Owns: settling delay, generation step rate, visibility pause, reduced-motion freeze, FPS-driven step throttle. |
+| `src/styles.css` | Field background, offscreen H1 styles, canvas sizing, fallback ASCII rendering using a CSS-grid of `<span>` cells (so the static state matches the WebGL state visually). |
+| `public/favicon.svg` | A single mark cell on field. Same palette. |
+| `public/og.png` | 1200×630 static rendering of the fully-formed name. Generated once, committed. |
+
+Test files:
+
+| Path | Responsibility |
+| --- | --- |
+| `tests/layout.test.ts` | Breakpoint matrix for `layout()`. |
+| `tests/ca-rules.test.ts` | Rule correctness via canonical patterns (block, blinker, glider for Conway, etc.). |
+| `tests/seed.test.ts` | Rasterizer determinism (same input → same buffer). |
+| `tests/e2e/home.spec.ts` | Playwright: page loads, accessible name, no console errors, fallback path renders without WebGL, no second color present. |
+
+---
+
+## Conventions
+
+- **TDD where the cost is low and the value is high.** Layout, CA rules, seed: test-first. WebGL setup and shaders: smoke-test (compile/link succeeds, frame renders without GL errors). Visual correctness: covered by the e2e Playwright snapshot pass and by you looking at the page.
+- **Commits per task, not per step.** Each task ends with one commit that includes the tests and the implementation it covers.
+- **No trailing whitespace, no `prettier` ceremony.** Use TypeScript's strictest settings; let the compiler enforce shape.
+- **OKLCH in source, hex in YAML/CSS where required.** OKLCH stays canonical in `styles.css` via `color-mix()`-friendly forms.
+
+---
+
+## Task 1: Project bootstrap
+
+Stand up Vite + TypeScript + Vitest + Playwright. No tests yet; we're checking the dev server boots and the type-checker is strict.
+
+**Files:**
+- Create: `package.json`
+- Create: `tsconfig.json`
+- Create: `vite.config.ts`
+- Create: `playwright.config.ts`
+- Create: `index.html` (placeholder; replaced in Task 2)
+- Create: `src/main.ts` (placeholder; replaced in Task 2)
+
+- [ ] **Step 1: Initialize package.json**
+
+Create `package.json`:
+
+```json
+{
+  "name": "richarddowden.com",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0",
+    "@playwright/test": "^1.48.0",
+    "@axe-core/playwright": "^4.10.0",
+    "@types/node": "^22.0.0"
+  }
+}
+```
+
+- [ ] **Step 2: Install dependencies**
+
+Run: `npm install`
+Expected: `node_modules` populated, `package-lock.json` created, no errors.
+
+- [ ] **Step 3: TypeScript config**
+
+Create `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": ["vite/client", "vitest/globals"]
+  },
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+}
+```
+
+- [ ] **Step 4: Vite config**
+
+Create `vite.config.ts`:
+
+```ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    include: ['tests/**/*.test.ts'],
+    exclude: ['tests/e2e/**'],
+  },
+  build: {
+    target: 'es2022',
+    minify: 'esbuild',
+    sourcemap: true,
+    cssMinify: 'esbuild',
+  },
+});
+```
+
+Run: `npm install -D happy-dom`
+Expected: happy-dom added to `devDependencies`.
+
+- [ ] **Step 5: Playwright config**
+
+Create `playwright.config.ts`:
+
+```ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
+    reuseExistingServer: !process.env.CI,
+  },
+  use: {
+    baseURL: 'http://localhost:5173',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  ],
+});
+```
+
+Run: `npx playwright install chromium`
+Expected: Chromium binary installed.
+
+- [ ] **Step 6: Placeholder shell**
+
+Create `index.html`:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Richard Dowden</title>
+  </head>
+  <body>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+```
+
+Create `src/main.ts`:
+
+```ts
+console.log('richarddowden.com booted');
+```
+
+- [ ] **Step 7: Verify dev server**
+
+Run: `npm run dev`
+Expected: Vite serves at `http://localhost:5173`, no errors. Page loads, console logs the boot message. Stop the server with Ctrl-C.
+
+- [ ] **Step 8: Verify typecheck and test runners**
+
+Run: `npm run typecheck`
+Expected: no errors.
+
+Run: `npm test`
+Expected: `No test files found` (zero tests yet) — that's fine, it should exit 0 or 1; the harness is wired.
+
+Run: `npm run test:e2e`
+Expected: `No tests found` (zero specs yet) — the e2e harness is wired.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add package.json package-lock.json tsconfig.json vite.config.ts \
+  playwright.config.ts index.html src/main.ts
+git commit -m "Bootstrap Vite + TypeScript + Vitest + Playwright"
+```
+
+---
+
+## Task 2: HTML shell, field styles, accessibility, static fallback rendering
+
+This task builds the site without any JavaScript at all. When this task lands, opening `index.html` in a browser shows the field color and the fully-formed ASCII name in the correct adaptive layout. This is the WebGL-fail state and the reduced-motion state. The JS rendering in later tasks just *replaces* the static node with a canvas; the static node remains the SSR fallback that ships in HTML.
+
+**Files:**
+- Modify: `index.html`
+- Create: `src/styles.css`
+
+- [ ] **Step 1: Pick provisional palette tokens**
+
+Add palette decisions to `src/styles.css`. Use OKLCH; the design brief says specific hue is open but lists candidates. Default to dusty celadon for first ship, easy to retune later.
+
+```css
+:root {
+  --field: oklch(86% 0.018 165);   /* dusty celadon */
+  --mark:  oklch(18% 0.012 165);   /* near-black, tinted toward field */
+}
+
+@media (prefers-color-scheme: dark) {
+  /* The brief says theme is fixed; do NOT add dark-mode swap. The scene
+     sentence forces one palette regardless of OS preference. */
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--field);
+  color: var(--mark);
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Druk Wide Web', 'Compacta', 'Impact', 'Helvetica Neue', sans-serif;
+  font-weight: 900;
+  font-stretch: 50%;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  -webkit-font-smoothing: never;
+  font-smooth: never;
+  text-rendering: geometricPrecision;
+}
+
+body {
+  display: grid;
+  place-items: stretch;
+}
+
+/* Offscreen H1 for assistive tech. The visible name is rendered inside
+   #stage, which is aria-hidden. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+```
+
+A note on the font stack: the heavy condensed display family will be self-hosted via `@font-face` in Task 12 (polish). For now, the system fallback (`Impact` / `Helvetica Neue`) is good enough to see the layout work. The design brief lists candidates in §10.
+
+- [ ] **Step 2: HTML structure**
+
+Replace `index.html`:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#cfd9d3" /> <!-- approximate hex of celadon -->
+    <title>Richard Dowden</title>
+    <meta name="description" content="Richard Dowden — a name, an ASCII rendering, a cellular automaton allowed to run." />
+    <meta property="og:title" content="Richard Dowden" />
+    <meta property="og:description" content="A name, an ASCII rendering, a cellular automaton allowed to run." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <h1 class="sr-only">Richard Dowden</h1>
+    <div id="stage" aria-hidden="true">
+      <span class="line" data-text="RICHARD">RICHARD</span>
+      <span class="line" data-text="DOWDEN">DOWDEN</span>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+```
+
+The two `.line` spans are the static fallback. JavaScript will replace `#stage` with a canvas when WebGL is available and reduced-motion isn't requested.
+
+- [ ] **Step 3: Style the static fallback**
+
+Append to `src/styles.css`:
+
+```css
+#stage {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 4vmin;
+  gap: 2vmin;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+#stage .line {
+  /* Edge-to-edge typography; clamp prevents micro-screen blowups. */
+  font-size: clamp(8rem, 24vw, 48vw);
+  line-height: 0.85;
+  display: block;
+  white-space: nowrap;
+  /* The static fallback is the fully-formed letter at full opacity, no fill texture.
+     The canvas (when present) overlays this with the ASCII grid. */
+}
+
+/* Ultrawide: one line edge-to-edge */
+@media (min-width: 1280px) {
+  #stage {
+    grid-template-rows: 1fr;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    justify-content: center;
+    align-content: center;
+    gap: 0.4ch;
+  }
+  #stage .line { font-size: clamp(8rem, 14vw, 18rem); }
+}
+
+/* Narrow phones: initials only, asymmetric upper-left placement */
+@media (max-width: 599px) {
+  #stage .line:nth-of-type(1)::before { content: 'R'; }
+  #stage .line:nth-of-type(2)::before { content: '·D'; }
+  #stage .line { font-size: 0; } /* hide actual content */
+  #stage .line::before {
+    font-size: 56vw;
+    line-height: 1;
+    display: block;
+  }
+  #stage {
+    place-content: start start;
+    grid-template-rows: auto;
+    grid-auto-flow: column;
+    gap: 0;
+    padding: 6vmin 4vmin;
+  }
+  #stage .line { width: max-content; }
+}
+
+/* Reduced motion / no-JS / WebGL-unavailable: same view, no canvas overlay.
+   The static stage IS the experience. */
+@media (prefers-reduced-motion: reduce) {
+  /* Marker class added by main.ts is .reduced-motion; ensures stage is never replaced. */
+}
+```
+
+- [ ] **Step 4: Verify in browser**
+
+Run: `npm run dev`
+Open `http://localhost:5173` and resize the window:
+
+- ≥1280px: single line `RICHARD DOWDEN` centered, edge-to-edge.
+- 600–1279px: two stacked lines, each filling its row.
+- <600px: `R` over `·D`, asymmetric upper-left, both very large.
+
+In every case: dusty celadon background, near-black type, no shadows, no gradients.
+
+If letterforms look light or thin, that's OK for now; we'll self-host the heavy condensed face in Task 12.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add index.html src/styles.css
+git commit -m "Static HTML shell with adaptive ASCII-name layout, AA-tinted palette"
+```
+
+---
+
+## Task 3: Layout module (pure function, TDD)
+
+Pure function that maps `{viewportWidth, viewportHeight, prefersReducedMotion}` → `{copy, lines, cellSize, fontSizePx}`. Used by `main.ts` to decide what the canvas renders. Keeps the layout decision out of CSS and in code so the canvas matches the static fallback exactly.
+
+**Files:**
+- Create: `tests/layout.test.ts`
+- Create: `src/layout.ts`
+
+- [ ] **Step 1: Write failing tests**
+
+Create `tests/layout.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { layout } from '../src/layout';
+
+describe('layout', () => {
+  it('returns single-line full name for ultrawide', () => {
+    const r = layout({ viewportWidth: 1920, viewportHeight: 1080 });
+    expect(r.copy).toBe('RICHARD DOWDEN');
+    expect(r.lines).toEqual(['RICHARD DOWDEN']);
+  });
+
+  it('returns two stacked words for standard desktop', () => {
+    const r = layout({ viewportWidth: 1024, viewportHeight: 768 });
+    expect(r.copy).toBe('RICHARD DOWDEN');
+    expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
+  });
+
+  it('returns initials only for narrow phone', () => {
+    const r = layout({ viewportWidth: 390, viewportHeight: 844 });
+    expect(r.copy).toBe('R·D');
+    expect(r.lines).toEqual(['R', '·D']);
+  });
+
+  it('uses two lines at exactly 600px (boundary)', () => {
+    const r = layout({ viewportWidth: 600, viewportHeight: 800 });
+    expect(r.lines).toEqual(['RICHARD', 'DOWDEN']);
+  });
+
+  it('uses one line at exactly 1280px (boundary)', () => {
+    const r = layout({ viewportWidth: 1280, viewportHeight: 720 });
+    expect(r.lines).toEqual(['RICHARD DOWDEN']);
+  });
+
+  it('cellSize is integer px', () => {
+    const r = layout({ viewportWidth: 1024, viewportHeight: 768 });
+    expect(Number.isInteger(r.cellSize)).toBe(true);
+    expect(r.cellSize).toBeGreaterThan(0);
+  });
+
+  it('cellSize is consistent across breakpoints (8 or 12)', () => {
+    const a = layout({ viewportWidth: 1024, viewportHeight: 768 });
+    const b = layout({ viewportWidth: 1920, viewportHeight: 1080 });
+    expect([8, 12]).toContain(a.cellSize);
+    expect([8, 12]).toContain(b.cellSize);
+  });
+
+  it('cellSize is 8 on retina (devicePixelRatio >= 2), 12 otherwise', () => {
+    const retina = layout({ viewportWidth: 1024, viewportHeight: 768, devicePixelRatio: 2 });
+    const standard = layout({ viewportWidth: 1024, viewportHeight: 768, devicePixelRatio: 1 });
+    expect(retina.cellSize).toBe(8);
+    expect(standard.cellSize).toBe(12);
+  });
+
+  it('fontSizePx is an integer multiple of cellSize', () => {
+    const r = layout({ viewportWidth: 1024, viewportHeight: 768 });
+    expect(r.fontSizePx % r.cellSize).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests, verify they fail**
+
+Run: `npm test`
+Expected: all 9 tests fail with "Cannot find module '../src/layout'".
+
+- [ ] **Step 3: Implement `layout`**
+
+Create `src/layout.ts`:
+
+```ts
+export interface LayoutInput {
+  viewportWidth: number;
+  viewportHeight: number;
+  devicePixelRatio?: number;
+}
+
+export interface LayoutResult {
+  copy: string;
+  lines: string[];
+  cellSize: number;
+  fontSizePx: number;
+}
+
+export function layout(input: LayoutInput): LayoutResult {
+  const { viewportWidth, viewportHeight, devicePixelRatio = 1 } = input;
+  const cellSize = devicePixelRatio >= 2 ? 8 : 12;
+
+  let copy: string;
+  let lines: string[];
+
+  if (viewportWidth < 600) {
+    copy = 'R·D';
+    lines = ['R', '·D'];
+  } else if (viewportWidth < 1280) {
+    copy = 'RICHARD DOWDEN';
+    lines = ['RICHARD', 'DOWDEN'];
+  } else {
+    copy = 'RICHARD DOWDEN';
+    lines = ['RICHARD DOWDEN'];
+  }
+
+  // fontSizePx is the visible cap height in px, snapped to integer multiples
+  // of cellSize so the rasterized seed aligns to the CA grid.
+  const longestLineChars = Math.max(...lines.map((l) => l.length));
+  const padding = Math.floor(viewportWidth * 0.04); // matches CSS 4vmin-ish
+  const usableWidth = viewportWidth - padding * 2;
+  const approxPxPerChar = usableWidth / longestLineChars;
+  // Heavy condensed faces are roughly 0.5 width-to-height.
+  const rawFontSize = approxPxPerChar / 0.5;
+  const linesShown = lines.length;
+  const verticalCap = (viewportHeight - padding * 2) / linesShown;
+  const target = Math.min(rawFontSize, verticalCap);
+  const fontSizePx = Math.floor(target / cellSize) * cellSize;
+
+  return { copy, lines, cellSize, fontSizePx };
+}
+```
+
+- [ ] **Step 4: Run tests, verify all pass**
+
+Run: `npm test`
+Expected: 9 passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/layout.ts tests/layout.test.ts
+git commit -m "Pure layout() function: viewport → adaptive copy + cell grid"
+```
+
+---
+
+## Task 4: CA rules module (pure functions, TDD)
+
+Pure CA rule functions used both by tests (for correctness) and as the canonical specification of what each GLSL stepper variant should do. Each rule maps `(centerState: 0|1|2, liveNeighbors: 0..8)` to a next state. Implementations: `conway`, `briansBrain`, `dayAndNight`, `custom`.
+
+The GLSL stepper in Task 8 will mirror this logic; if a test passes here for Conway and the GLSL-rendered output of the same initial condition disagrees, the GLSL is wrong.
+
+**Files:**
+- Create: `tests/ca-rules.test.ts`
+- Create: `src/ca-rules.ts`
+
+- [ ] **Step 1: Write failing tests**
+
+Create `tests/ca-rules.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import {
+  conway,
+  briansBrain,
+  dayAndNight,
+  custom,
+  type RuleId,
+  type RuleFn,
+} from '../src/ca-rules';
+
+const RULES: Record<RuleId, RuleFn> = { conway, briansBrain, dayAndNight, custom };
+
+describe('conway (Game of Life)', () => {
+  it('B3: dead cell with exactly 3 live neighbors becomes alive', () => {
+    expect(conway(0, 3)).toBe(1);
+  });
+
+  it('S2: live cell with 2 live neighbors stays alive', () => {
+    expect(conway(1, 2)).toBe(1);
+  });
+
+  it('S3: live cell with 3 live neighbors stays alive', () => {
+    expect(conway(1, 3)).toBe(1);
+  });
+
+  it('underpopulation: live cell with 0 or 1 dies', () => {
+    expect(conway(1, 0)).toBe(0);
+    expect(conway(1, 1)).toBe(0);
+  });
+
+  it('overpopulation: live cell with 4..8 dies', () => {
+    for (let n = 4; n <= 8; n++) {
+      expect(conway(1, n)).toBe(0);
+    }
+  });
+
+  it('dead cells with anything other than 3 neighbors stay dead', () => {
+    for (let n = 0; n <= 8; n++) {
+      if (n !== 3) expect(conway(0, n)).toBe(0);
+    }
+  });
+});
+
+describe("briansBrain (3-state)", () => {
+  it('alive (1) always becomes dying (2)', () => {
+    for (let n = 0; n <= 8; n++) expect(briansBrain(1, n)).toBe(2);
+  });
+
+  it('dying (2) always becomes dead (0)', () => {
+    for (let n = 0; n <= 8; n++) expect(briansBrain(2, n)).toBe(0);
+  });
+
+  it('dead (0) with exactly 2 alive neighbors becomes alive', () => {
+    expect(briansBrain(0, 2)).toBe(1);
+  });
+
+  it('dead (0) with anything other than 2 stays dead', () => {
+    for (let n = 0; n <= 8; n++) {
+      if (n !== 2) expect(briansBrain(0, n)).toBe(0);
+    }
+  });
+});
+
+describe('dayAndNight (B3678/S34678)', () => {
+  it('birth on 3, 6, 7, 8 neighbors', () => {
+    for (const n of [3, 6, 7, 8]) expect(dayAndNight(0, n)).toBe(1);
+  });
+
+  it('no birth on 0, 1, 2, 4, 5', () => {
+    for (const n of [0, 1, 2, 4, 5]) expect(dayAndNight(0, n)).toBe(0);
+  });
+
+  it('survival on 3, 4, 6, 7, 8', () => {
+    for (const n of [3, 4, 6, 7, 8]) expect(dayAndNight(1, n)).toBe(1);
+  });
+
+  it('death on 0, 1, 2, 5', () => {
+    for (const n of [0, 1, 2, 5]) expect(dayAndNight(1, n)).toBe(0);
+  });
+});
+
+describe('custom (tuned for richarddowden.com)', () => {
+  it('produces a stable result for any (state, neighbors) pair', () => {
+    for (const s of [0, 1, 2] as const) {
+      for (let n = 0; n <= 8; n++) {
+        const r = custom(s, n);
+        expect([0, 1, 2]).toContain(r);
+      }
+    }
+  });
+
+  it('has at least one birth condition', () => {
+    let births = 0;
+    for (let n = 0; n <= 8; n++) {
+      if (custom(0, n) !== 0) births++;
+    }
+    expect(births).toBeGreaterThan(0);
+  });
+});
+
+describe('RULES registry', () => {
+  it('exports all four rules', () => {
+    expect(Object.keys(RULES).sort()).toEqual(
+      ['briansBrain', 'conway', 'custom', 'dayAndNight']
+    );
+  });
+});
+```
+
+- [ ] **Step 2: Run tests, verify they fail**
+
+Run: `npm test`
+Expected: every test fails with "Cannot find module '../src/ca-rules'".
+
+- [ ] **Step 3: Implement the rules**
+
+Create `src/ca-rules.ts`:
+
+```ts
+export type CellState = 0 | 1 | 2; // dead | alive | dying (3-state rules use 2)
+export type RuleFn = (state: CellState, liveNeighbors: number) => CellState;
+export type RuleId = 'conway' | 'briansBrain' | 'dayAndNight' | 'custom';
+
+export const conway: RuleFn = (state, n) => {
+  if (state === 1) return n === 2 || n === 3 ? 1 : 0;
+  return n === 3 ? 1 : 0;
+};
+
+export const briansBrain: RuleFn = (state, n) => {
+  if (state === 1) return 2;
+  if (state === 2) return 0;
+  return n === 2 ? 1 : 0;
+};
+
+export const dayAndNight: RuleFn = (state, n) => {
+  const B = new Set([3, 6, 7, 8]);
+  const S = new Set([3, 4, 6, 7, 8]);
+  if (state === 1) return S.has(n) ? 1 : 0;
+  return B.has(n) ? 1 : 0;
+};
+
+/**
+ * Tuned for the brief: persistence + emergence. The name should remain
+ * semi-recognizable for 30-120s before dissolving.
+ *
+ * Strategy: a near-Conway rule with extra survival on n=4 and a small
+ * birth on n=2 (slows extinction in dense regions like rasterized text).
+ * Tune in implementation by visual inspection of the rendered name's
+ * decay timeline.
+ */
+export const custom: RuleFn = (state, n) => {
+  if (state === 1) {
+    // S2348: extra survival to keep dense letter-bodies alive longer.
+    return n === 2 || n === 3 || n === 4 || n === 8 ? 1 : 0;
+  }
+  // B3 (standard) + a sparse B6 (occasional rebirth at edges).
+  return n === 3 || n === 6 ? 1 : 0;
+};
+
+export const RULES: Record<RuleId, RuleFn> = {
+  conway,
+  briansBrain,
+  dayAndNight,
+  custom,
+};
+```
+
+- [ ] **Step 4: Run tests, verify all pass**
+
+Run: `npm test`
+Expected: all tests pass.
+
+- [ ] **Step 5: Property-based assertion: Conway oscillators**
+
+Append to `tests/ca-rules.test.ts`:
+
+```ts
+describe('conway oscillators (integration of the grid)', () => {
+  // Helper: step a 2D grid by Conway's rule
+  function stepGrid(g: number[][]): number[][] {
+    const h = g.length;
+    const w = g[0]!.length;
+    const next = Array.from({ length: h }, () => Array<number>(w).fill(0));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const ny = y + dy, nx = x + dx;
+            if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+              n += g[ny]![nx]!;
+            }
+          }
+        }
+        next[y]![x] = conway(g[y]![x]! as CellState, n);
+      }
+    }
+    return next;
+  }
+
+  it('blinker oscillates with period 2', () => {
+    const horizontal = [
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 1, 1, 1, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ];
+    const vertical = stepGrid(horizontal);
+    const back = stepGrid(vertical);
+    expect(vertical[2]).toEqual([0, 0, 1, 0, 0]);
+    expect(vertical[1]![2]).toBe(1);
+    expect(vertical[3]![2]).toBe(1);
+    expect(back).toEqual(horizontal);
+  });
+
+  it('block is stable', () => {
+    const block = [
+      [0, 0, 0, 0],
+      [0, 1, 1, 0],
+      [0, 1, 1, 0],
+      [0, 0, 0, 0],
+    ];
+    expect(stepGrid(block)).toEqual(block);
+  });
+});
+```
+
+(The import line at the top of the file needs to add `type CellState` if it isn't already there; adjust the existing import to `import { conway, briansBrain, dayAndNight, custom, type RuleId, type RuleFn, type CellState } from '../src/ca-rules';`.)
+
+- [ ] **Step 6: Run all tests**
+
+Run: `npm test`
+Expected: all pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/ca-rules.ts tests/ca-rules.test.ts
+git commit -m "CA rules: Conway, Brian's Brain, Day-and-Night, custom; oscillator regression tests"
+```
+
+---
+
+## Task 5: Seed rasterization (text → 1-bit alpha buffer, TDD)
+
+Rasterize a typeset name to a `Uint8Array` (1 byte per cell, 0 or 1) suitable for upload to a WebGL texture. Used as the CA initial condition. Determinism matters; the same input must produce the same buffer so the e2e snapshot is stable.
+
+**Files:**
+- Create: `tests/seed.test.ts`
+- Create: `src/seed.ts`
+
+- [ ] **Step 1: Write failing tests**
+
+Create `tests/seed.test.ts`:
+
+```ts
+import { describe, it, expect, beforeAll } from 'vitest';
+import { rasterizeSeed } from '../src/seed';
+
+// happy-dom needs a polyfill for OffscreenCanvas + 2D context to satisfy
+// the rasterizer in tests. We use a simple HTMLCanvasElement-based fallback
+// inside seed.ts (it accepts either OffscreenCanvas or HTMLCanvasElement
+// via the optional `createCanvas` argument).
+
+function makeTestCanvas(w: number, h: number): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+describe('rasterizeSeed', () => {
+  it('returns a buffer of width*height bytes', () => {
+    const buf = rasterizeSeed({
+      lines: ['RICHARD'],
+      width: 320,
+      height: 80,
+      fontSizePx: 64,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    });
+    expect(buf.byteLength).toBe(40 * 10); // (320/8) * (80/8)
+  });
+
+  it('contains at least one live cell for non-empty text', () => {
+    const buf = rasterizeSeed({
+      lines: ['R'],
+      width: 64,
+      height: 64,
+      fontSizePx: 48,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    });
+    let live = 0;
+    for (const b of buf) if (b === 1) live++;
+    expect(live).toBeGreaterThan(0);
+  });
+
+  it('is deterministic: same input → identical buffer', () => {
+    const args = {
+      lines: ['DOWDEN'] as string[],
+      width: 256,
+      height: 64,
+      fontSizePx: 56,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    };
+    const a = rasterizeSeed(args);
+    const b = rasterizeSeed(args);
+    expect(a).toEqual(b);
+  });
+
+  it('blank lines produce a buffer of all zeros', () => {
+    const buf = rasterizeSeed({
+      lines: [''],
+      width: 64,
+      height: 64,
+      fontSizePx: 48,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    });
+    expect(buf.every((b) => b === 0)).toBe(true);
+  });
+
+  it('two lines stack vertically', () => {
+    const buf = rasterizeSeed({
+      lines: ['R', 'D'],
+      width: 64,
+      height: 128,
+      fontSizePx: 48,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    });
+    const cellsW = 64 / 8;
+    const cellsH = 128 / 8;
+    let topLive = 0, bottomLive = 0;
+    for (let y = 0; y < cellsH; y++) {
+      for (let x = 0; x < cellsW; x++) {
+        const idx = y * cellsW + x;
+        if (buf[idx] === 1) {
+          if (y < cellsH / 2) topLive++;
+          else bottomLive++;
+        }
+      }
+    }
+    expect(topLive).toBeGreaterThan(0);
+    expect(bottomLive).toBeGreaterThan(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests, verify they fail**
+
+Run: `npm test`
+Expected: 5 failures, "Cannot find module '../src/seed'".
+
+- [ ] **Step 3: Implement `rasterizeSeed`**
+
+Create `src/seed.ts`:
+
+```ts
+export interface SeedInput {
+  lines: string[];
+  width: number;          // canvas width in CSS pixels
+  height: number;         // canvas height in CSS pixels
+  fontSizePx: number;     // cap height target
+  cellSize: number;       // CA cell size in px (output buffer is width/cellSize x height/cellSize)
+  /** Override canvas factory for tests / non-OffscreenCanvas environments. */
+  createCanvas?: (w: number, h: number) => HTMLCanvasElement | OffscreenCanvas;
+}
+
+const DEFAULT_FONT_FAMILY =
+  "'Druk Wide Web', 'Compacta', 'Impact', 'Helvetica Neue', sans-serif";
+
+function defaultCreate(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+/**
+ * Rasterize the typeset name to a 1-bit grid of CA cells.
+ * The buffer is row-major: index = y * (width/cellSize) + x.
+ * Each byte is 0 (dead) or 1 (alive).
+ */
+export function rasterizeSeed(input: SeedInput): Uint8Array {
+  const { lines, width, height, fontSizePx, cellSize } = input;
+  const create = input.createCanvas ?? defaultCreate;
+  const canvas = create(width, height);
+  const ctx = (canvas as HTMLCanvasElement).getContext('2d', {
+    willReadFrequently: true,
+  }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (!ctx) throw new Error('rasterizeSeed: 2D canvas context unavailable');
+
+  // Field is transparent; mark is opaque black. We threshold on alpha.
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.font = `900 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
+
+  const lineHeight = fontSizePx * 0.85;
+  const totalTextHeight = lineHeight * lines.length;
+  const yStart = Math.floor((height - totalTextHeight) / 2);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (!line) continue;
+    const measured = ctx.measureText(line);
+    const xStart = Math.floor((width - measured.width) / 2);
+    ctx.fillText(line, xStart, yStart + i * lineHeight);
+  }
+
+  const cellsW = Math.floor(width / cellSize);
+  const cellsH = Math.floor(height / cellSize);
+  const out = new Uint8Array(cellsW * cellsH);
+
+  // Sample the alpha at each cell's center (or a 2x2 average for stability).
+  const img = ctx.getImageData(0, 0, width, height);
+  const data = img.data;
+  for (let cy = 0; cy < cellsH; cy++) {
+    for (let cx = 0; cx < cellsW; cx++) {
+      const px = cx * cellSize + Math.floor(cellSize / 2);
+      const py = cy * cellSize + Math.floor(cellSize / 2);
+      const i = (py * width + px) * 4;
+      const alpha = data[i + 3] ?? 0;
+      out[cy * cellsW + cx] = alpha > 128 ? 1 : 0;
+    }
+  }
+  return out;
+}
+```
+
+- [ ] **Step 4: Run tests, verify all pass**
+
+Run: `npm test`
+Expected: all pass.
+
+happy-dom's canvas is a stub — measureText returns 0 for unknown fonts and `getImageData` returns transparent pixels. The "two lines stack" and "non-empty live cells" tests may need a special setup. If happy-dom can't fillText reliably, swap to `jsdom-canvas` or run those specific tests under a real Chromium via Playwright component test. Document the fallback inline in the test if it's flaky.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/seed.ts tests/seed.test.ts
+git commit -m "rasterizeSeed(): text → 1-bit CA initial-condition buffer"
+```
+
+---
+
+## Task 6: Glyph atlas
+
+Build a single horizontal-strip canvas containing the 8 ASCII marks of the alphabet, pre-rendered in the mark color. Returns the canvas (and metadata). Used as a WebGL texture in render.
+
+**Files:**
+- Create: `src/glyph-atlas.ts`
+
+- [ ] **Step 1: Define the alphabet and atlas function**
+
+Create `src/glyph-atlas.ts`:
+
+```ts
+export const ALPHABET = ['.', ':', ';', '+', '*', '#', '@', '░'] as const;
+export type Glyph = typeof ALPHABET[number];
+
+export interface GlyphAtlas {
+  canvas: HTMLCanvasElement | OffscreenCanvas;
+  cellSize: number;
+  alphabetLength: number;
+}
+
+const ATLAS_FONT_FAMILY = "'IBM Plex Mono', 'Menlo', 'Monaco', monospace";
+
+export function buildGlyphAtlas(cellSize: number, markColor: string): GlyphAtlas {
+  const w = cellSize * ALPHABET.length;
+  const h = cellSize;
+  const canvas =
+    typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(w, h)
+      : (() => {
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          return c;
+        })();
+
+  const ctx = (canvas as HTMLCanvasElement).getContext('2d');
+  if (!ctx) throw new Error('buildGlyphAtlas: 2D context unavailable');
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = markColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Mono atlas glyphs: render at slightly less than cellSize so they don't
+  // touch their bounds — we want air around each mark.
+  ctx.font = `${Math.floor(cellSize * 0.9)}px ${ATLAS_FONT_FAMILY}`;
+
+  for (let i = 0; i < ALPHABET.length; i++) {
+    const cx = i * cellSize + cellSize / 2;
+    const cy = cellSize / 2;
+    ctx.fillText(ALPHABET[i]!, cx, cy);
+  }
+
+  return { canvas, cellSize, alphabetLength: ALPHABET.length };
+}
+```
+
+- [ ] **Step 2: Sanity test in a browser smoke run**
+
+Add a temporary block to `src/main.ts` to verify the atlas renders by eye:
+
+```ts
+import { buildGlyphAtlas } from './glyph-atlas';
+
+const a = buildGlyphAtlas(32, 'oklch(18% 0.012 165)');
+document.body.appendChild(a.canvas as HTMLCanvasElement);
+(a.canvas as HTMLCanvasElement).style.position = 'fixed';
+(a.canvas as HTMLCanvasElement).style.top = '0';
+(a.canvas as HTMLCanvasElement).style.right = '0';
+(a.canvas as HTMLCanvasElement).style.zIndex = '9999';
+(a.canvas as HTMLCanvasElement).style.background = 'oklch(86% 0.018 165)';
+```
+
+Run: `npm run dev`. You should see a small horizontal strip in the top-right of `. : ; + * # @ ░` rendered in the mark color on the field color.
+
+Once verified, **remove the temporary block** from `main.ts` before committing. Replace it with:
+
+```ts
+console.log('richarddowden.com booted');
+```
+
+(or leave empty; the real bootstrap happens in Task 10).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/glyph-atlas.ts
+git commit -m "Glyph atlas: 8-mark alphabet pre-rendered to single-row texture canvas"
+```
+
+---
+
+## Task 7: WebGL setup module
+
+Centralize WebGL2 context creation, shader compile/link, ping-pong framebuffers, and texture upload. Throws typed errors that `main.ts` catches to fall back to the static stage.
+
+**Files:**
+- Create: `src/webgl.ts`
+
+- [ ] **Step 1: Implement WebGL helpers**
+
+Create `src/webgl.ts`:
+
+```ts
+export class WebGLNotAvailable extends Error {
+  constructor() {
+    super('WebGL2 unavailable');
+    this.name = 'WebGLNotAvailable';
+  }
+}
+
+export class ShaderCompileError extends Error {
+  constructor(stage: 'vertex' | 'fragment' | 'link', log: string) {
+    super(`${stage} shader error: ${log}`);
+    this.name = 'ShaderCompileError';
+  }
+}
+
+export interface WebGLBundle {
+  gl: WebGL2RenderingContext;
+  canvas: HTMLCanvasElement;
+}
+
+export function createBundle(canvas: HTMLCanvasElement): WebGLBundle {
+  const gl = canvas.getContext('webgl2', {
+    antialias: false,
+    preserveDrawingBuffer: false,
+    premultipliedAlpha: false,
+    alpha: false,
+  });
+  if (!gl) throw new WebGLNotAvailable();
+  return { gl, canvas };
+}
+
+export function compileShader(
+  gl: WebGL2RenderingContext,
+  type: GLenum,
+  source: string,
+  stage: 'vertex' | 'fragment',
+): WebGLShader {
+  const shader = gl.createShader(type);
+  if (!shader) throw new ShaderCompileError(stage, 'createShader returned null');
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(shader) ?? '(no log)';
+    gl.deleteShader(shader);
+    throw new ShaderCompileError(stage, log);
+  }
+  return shader;
+}
+
+export function linkProgram(
+  gl: WebGL2RenderingContext,
+  vsSource: string,
+  fsSource: string,
+): WebGLProgram {
+  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSource, 'vertex');
+  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource, 'fragment');
+  const program = gl.createProgram();
+  if (!program) throw new ShaderCompileError('link', 'createProgram returned null');
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const log = gl.getProgramInfoLog(program) ?? '(no log)';
+    throw new ShaderCompileError('link', log);
+  }
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  return program;
+}
+
+export interface PingPong {
+  read: { tex: WebGLTexture; fb: WebGLFramebuffer };
+  write: { tex: WebGLTexture; fb: WebGLFramebuffer };
+  swap: () => void;
+  width: number;
+  height: number;
+}
+
+/**
+ * Two single-channel R8 textures wrapped in framebuffers, swapped each step.
+ * R8 is enough for 0|1; for 3-state rules (Brian's Brain) bump to RG8 or
+ * pack states in two bits.
+ */
+export function createPingPong(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+  initial: Uint8Array,
+): PingPong {
+  function makeAttachment(): { tex: WebGLTexture; fb: WebGLFramebuffer } {
+    const tex = gl.createTexture();
+    if (!tex) throw new Error('createTexture returned null');
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fb = gl.createFramebuffer();
+    if (!fb) throw new Error('createFramebuffer returned null');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error('framebuffer incomplete');
+    }
+    return { tex, fb };
+  }
+
+  const a = makeAttachment();
+  const b = makeAttachment();
+
+  // Upload initial state into a.tex
+  gl.bindTexture(gl.TEXTURE_2D, a.tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.UNSIGNED_BYTE, initial);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  let read = a;
+  let write = b;
+  return {
+    get read() { return read; },
+    get write() { return write; },
+    swap() {
+      const tmp = read;
+      read = write;
+      write = tmp;
+    },
+    width,
+    height,
+  };
+}
+
+export function uploadTexture(
+  gl: WebGL2RenderingContext,
+  source: TexImageSource,
+): WebGLTexture {
+  const tex = gl.createTexture();
+  if (!tex) throw new Error('createTexture returned null');
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+```
+
+- [ ] **Step 2: Commit**
+
+(No test yet; smoke-tested when wired up in Task 10.)
+
+```bash
+git add src/webgl.ts
+git commit -m "WebGL2 helpers: context, shader compile, ping-pong textures, atlas upload"
+```
+
+---
+
+## Task 8: Step shader (CA stepper, GLSL)
+
+GLSL fragment shader that reads the previous CA state and writes the next generation. Rule selected by a `#define RULE_*` substituted at program-link time.
+
+**Files:**
+- Create: `src/shaders.ts`
+
+- [ ] **Step 1: Author the GLSL strings**
+
+Create `src/shaders.ts`:
+
+```ts
+export const VS_QUAD = /* glsl */ `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+/**
+ * Step shader: reads previous state from uPrev, writes next.
+ * Output texture is R8; alive=1.0, dead=0.0, dying=0.5 (for 3-state rules).
+ *
+ * Rule injected via #define RULE_<id>; only one is active per linked program.
+ *   RULE_CONWAY        — B3/S23
+ *   RULE_BRIANS_BRAIN  — 3-state, B2 / D / dead-after-1
+ *   RULE_DAY_NIGHT     — B3678/S34678
+ *   RULE_CUSTOM        — tuned: B36/S2348
+ */
+export const FS_STEP = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uPrev;
+uniform vec2 uResolution; // texture dims in cells
+
+float sampleAt(vec2 cell) {
+  // Clamp to edges; CA does not wrap.
+  vec2 uv = (cell + 0.5) / uResolution;
+  return texture(uPrev, uv).r > 0.75 ? 1.0
+       : texture(uPrev, uv).r > 0.25 ? 0.5
+       : 0.0;
+}
+
+void main() {
+  vec2 cell = floor(vUv * uResolution);
+  float c = sampleAt(cell);
+
+  // Count live (==1.0) neighbors; ignore dying.
+  float n = 0.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      vec2 nc = cell + vec2(float(dx), float(dy));
+      if (nc.x < 0.0 || nc.y < 0.0 || nc.x >= uResolution.x || nc.y >= uResolution.y) continue;
+      if (sampleAt(nc) > 0.75) n += 1.0;
+    }
+  }
+
+  float next = 0.0;
+
+#ifdef RULE_CONWAY
+  if (c > 0.75) next = (n == 2.0 || n == 3.0) ? 1.0 : 0.0;
+  else          next = (n == 3.0) ? 1.0 : 0.0;
+#endif
+
+#ifdef RULE_BRIANS_BRAIN
+  if (c > 0.75) next = 0.5;          // alive -> dying
+  else if (c > 0.25) next = 0.0;     // dying -> dead
+  else next = (n == 2.0) ? 1.0 : 0.0;
+#endif
+
+#ifdef RULE_DAY_NIGHT
+  if (c > 0.75) {
+    next = (n == 3.0 || n == 4.0 || n == 6.0 || n == 7.0 || n == 8.0) ? 1.0 : 0.0;
+  } else {
+    next = (n == 3.0 || n == 6.0 || n == 7.0 || n == 8.0) ? 1.0 : 0.0;
+  }
+#endif
+
+#ifdef RULE_CUSTOM
+  if (c > 0.75) {
+    next = (n == 2.0 || n == 3.0 || n == 4.0 || n == 8.0) ? 1.0 : 0.0;
+  } else {
+    next = (n == 3.0 || n == 6.0) ? 1.0 : 0.0;
+  }
+#endif
+
+  outColor = vec4(next, 0.0, 0.0, 1.0);
+}
+`;
+
+/**
+ * Render shader: reads current state, samples glyph atlas at the per-cell
+ * position derived from the cell's coordinate hash.
+ *
+ * Output: opaque mark on transparent background; the canvas sits over
+ * the field-colored body element, so transparency = field color.
+ */
+export const FS_RENDER = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uState;       // R8: 1.0 alive, 0.5 dying, 0.0 dead
+uniform sampler2D uAtlas;       // RGBA atlas, glyphs side by side
+uniform vec2 uGridSize;         // cells across, cells down
+uniform float uAtlasLen;        // number of glyphs in atlas
+uniform vec3 uMarkColor;        // sRGB-linear of the mark color
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec2 cell = floor(vUv * uGridSize);
+  vec2 inCell = fract(vUv * uGridSize);
+
+  vec2 uvState = (cell + 0.5) / uGridSize;
+  float state = texture(uState, uvState).r;
+
+  if (state < 0.25) discard;
+
+  float glyphIdx = floor(hash21(cell) * uAtlasLen);
+  float u = (glyphIdx + inCell.x) / uAtlasLen;
+  float v = inCell.y;
+  float alpha = texture(uAtlas, vec2(u, v)).a;
+
+  // Dying cells render at 50% opacity (only seen with 3-state rules).
+  float opacity = state > 0.75 ? 1.0 : 0.5;
+  outColor = vec4(uMarkColor, alpha * opacity);
+}
+`;
+
+export function defineRule(rule: 'conway' | 'briansBrain' | 'dayAndNight' | 'custom'): string {
+  switch (rule) {
+    case 'conway':      return '#define RULE_CONWAY\n';
+    case 'briansBrain': return '#define RULE_BRIANS_BRAIN\n';
+    case 'dayAndNight': return '#define RULE_DAY_NIGHT\n';
+    case 'custom':      return '#define RULE_CUSTOM\n';
+  }
+}
+
+export function buildStepShader(rule: 'conway' | 'briansBrain' | 'dayAndNight' | 'custom'): string {
+  // Inject the #define after the #version line.
+  return FS_STEP.replace('#version 300 es\n', `#version 300 es\n${defineRule(rule)}`);
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/shaders.ts
+git commit -m "GLSL shaders: step (CA, rule-injectable) and render (state + glyph atlas)"
+```
+
+---
+
+## Task 9: Animation loop & lifecycle
+
+Owns the frame loop. Handles: settling delay (no stepping for the first 1.5s), generation step rate (10–20 gens/sec), document.hidden pause, prefers-reduced-motion freeze, and FPS-driven step throttle when sustained perf drops below 30fps.
+
+**Files:**
+- Create: `src/lifecycle.ts`
+
+- [ ] **Step 1: Implement lifecycle controller**
+
+Create `src/lifecycle.ts`:
+
+```ts
+export interface LifecycleConfig {
+  settlingMs: number;
+  initialGenerationsPerSecond: number;
+  minGenerationsPerSecond: number;
+  /** Called once per animation frame to render. */
+  render: () => void;
+  /** Called once per CA generation step. */
+  step: () => void;
+}
+
+export interface LifecycleHandle {
+  stop: () => void;
+}
+
+export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
+  let stopped = false;
+  let rafId: number | null = null;
+  let lastFrameTime = performance.now();
+  let lastStepTime = lastFrameTime;
+  let stepInterval = 1000 / cfg.initialGenerationsPerSecond;
+  let elapsedSinceStart = 0;
+  let frameCount = 0;
+  let fpsAccumulator = 0;
+  let fpsSampleStart = lastFrameTime;
+
+  function loop(now: number) {
+    if (stopped) return;
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+    elapsedSinceStart += dt;
+
+    cfg.render();
+
+    if (elapsedSinceStart >= cfg.settlingMs && now - lastStepTime >= stepInterval) {
+      cfg.step();
+      lastStepTime = now;
+    }
+
+    // FPS tracking: sample over 1s windows.
+    frameCount++;
+    fpsAccumulator += dt;
+    if (fpsAccumulator >= 1000) {
+      const fps = (frameCount * 1000) / fpsAccumulator;
+      if (fps < 30) {
+        // Halve the step rate (slow CA), don't touch render.
+        const newGps = Math.max(
+          cfg.minGenerationsPerSecond,
+          (1000 / stepInterval) / 2,
+        );
+        stepInterval = 1000 / newGps;
+      }
+      frameCount = 0;
+      fpsAccumulator = 0;
+      fpsSampleStart = now;
+    }
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function pause() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+  function resume() {
+    if (rafId === null && !stopped) {
+      lastFrameTime = performance.now();
+      lastStepTime = lastFrameTime;
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+
+  function visibility() {
+    if (document.hidden) pause();
+    else resume();
+  }
+  document.addEventListener('visibilitychange', visibility);
+
+  rafId = requestAnimationFrame(loop);
+
+  return {
+    stop() {
+      stopped = true;
+      pause();
+      document.removeEventListener('visibilitychange', visibility);
+    },
+  };
+}
+
+export function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/lifecycle.ts
+git commit -m "Lifecycle: RAF loop, settling delay, visibility pause, FPS throttle"
+```
+
+---
+
+## Task 10: Bootstrap (`main.ts`) — wire it all together
+
+This is the integration task. Detect WebGL, run feature detection for reduced-motion, build shaders, upload textures, kick off the loop. On any failure, leave the static stage in place — never show "an error occurred."
+
+**Files:**
+- Modify: `src/main.ts`
+
+- [ ] **Step 1: Replace `main.ts`**
+
+Replace `src/main.ts`:
+
+```ts
+import { layout } from './layout';
+import { rasterizeSeed } from './seed';
+import { buildGlyphAtlas } from './glyph-atlas';
+import {
+  createBundle,
+  linkProgram,
+  createPingPong,
+  uploadTexture,
+  WebGLNotAvailable,
+  ShaderCompileError,
+} from './webgl';
+import { VS_QUAD, FS_RENDER, buildStepShader } from './shaders';
+import { startLifecycle, prefersReducedMotion } from './lifecycle';
+
+function readMarkColorFromCSS(): [number, number, number] {
+  const probe = document.createElement('span');
+  probe.style.color = 'var(--mark)';
+  probe.style.display = 'none';
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color; // "rgb(46, 51, 49)" or oklch resolved
+  document.body.removeChild(probe);
+  const m = rgb.match(/rgba?\(([^)]+)\)/);
+  if (!m) return [0.07, 0.08, 0.08]; // fallback near-black
+  const parts = m[1]!.split(',').map((s) => parseFloat(s.trim()));
+  const [r = 0, g = 0, b = 0] = parts;
+  return [r / 255, g / 255, b / 255];
+}
+
+async function boot() {
+  // Reduced motion: leave the static stage in place. Done.
+  if (prefersReducedMotion()) {
+    document.documentElement.classList.add('reduced-motion');
+    return;
+  }
+
+  const stage = document.getElementById('stage');
+  if (!stage) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const layoutResult = layout({
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    devicePixelRatio: dpr,
+  });
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  const canvas = document.createElement('canvas');
+  canvas.id = 'canvas';
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.style.position = 'fixed';
+  canvas.style.inset = '0';
+  canvas.style.pointerEvents = 'none';
+  canvas.setAttribute('aria-hidden', 'true');
+
+  let bundle;
+  try {
+    bundle = createBundle(canvas);
+  } catch (e) {
+    if (e instanceof WebGLNotAvailable) return; // keep static stage
+    throw e;
+  }
+  const { gl } = bundle;
+
+  // Replace stage with canvas now that we know WebGL is available.
+  stage.replaceWith(canvas);
+
+  const cellSize = layoutResult.cellSize;
+  const gridW = Math.floor(canvas.width / cellSize);
+  const gridH = Math.floor(canvas.height / cellSize);
+  const seedW = gridW * cellSize;
+  const seedH = gridH * cellSize;
+
+  const initial = rasterizeSeed({
+    lines: layoutResult.lines,
+    width: seedW,
+    height: seedH,
+    fontSizePx: layoutResult.fontSizePx,
+    cellSize,
+  });
+
+  const markColor = readMarkColorFromCSS();
+  const atlas = buildGlyphAtlas(cellSize, `rgb(${markColor.map((c) => Math.round(c * 255)).join(',')})`);
+
+  let stepProgram, renderProgram;
+  try {
+    stepProgram = linkProgram(gl, VS_QUAD, buildStepShader('custom'));
+    renderProgram = linkProgram(gl, VS_QUAD, FS_RENDER);
+  } catch (e) {
+    if (e instanceof ShaderCompileError) {
+      console.error(e);
+      // Restore stage on shader failure.
+      canvas.replaceWith(stage);
+      return;
+    }
+    throw e;
+  }
+
+  // Full-screen quad VBO
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+    gl.STATIC_DRAW,
+  );
+
+  const ping = createPingPong(gl, gridW, gridH, initial);
+  const atlasTex = uploadTexture(gl, atlas.canvas as TexImageSource);
+
+  function bindQuad(program: WebGLProgram) {
+    const loc = gl.getAttribLocation(program, 'aPos');
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  }
+
+  function step() {
+    gl.useProgram(stepProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, ping.write.fb);
+    gl.viewport(0, 0, gridW, gridH);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, ping.read.tex);
+    gl.uniform1i(gl.getUniformLocation(stepProgram!, 'uPrev'), 0);
+    gl.uniform2f(gl.getUniformLocation(stepProgram!, 'uResolution'), gridW, gridH);
+    bindQuad(stepProgram!);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    ping.swap();
+  }
+
+  function render() {
+    gl.useProgram(renderProgram);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, ping.read.tex);
+    gl.uniform1i(gl.getUniformLocation(renderProgram!, 'uState'), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    gl.uniform1i(gl.getUniformLocation(renderProgram!, 'uAtlas'), 1);
+    gl.uniform2f(gl.getUniformLocation(renderProgram!, 'uGridSize'), gridW, gridH);
+    gl.uniform1f(gl.getUniformLocation(renderProgram!, 'uAtlasLen'), atlas.alphabetLength);
+    gl.uniform3f(
+      gl.getUniformLocation(renderProgram!, 'uMarkColor'),
+      markColor[0],
+      markColor[1],
+      markColor[2],
+    );
+    bindQuad(renderProgram!);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  startLifecycle({
+    settlingMs: 1500,
+    initialGenerationsPerSecond: 15,
+    minGenerationsPerSecond: 4,
+    step,
+    render,
+  });
+}
+
+boot().catch((e) => {
+  console.error('boot failed', e);
+});
+```
+
+- [ ] **Step 2: Run dev and verify**
+
+Run: `npm run dev`, open `http://localhost:5173`.
+
+Expected sequence:
+1. Field color washes in.
+2. The fully-formed name appears in the ASCII grid (each living cell shows one of `. : ; + * # @ ░`).
+3. ~1.5 seconds of stillness.
+4. Cells start to flicker and evolve. Gliders form, regions decay. The name persists in semi-recognizable form for tens of seconds, then dissolves.
+
+Resize the browser; the canvas does not yet handle resize (Task 11 covers that). For now, refresh after resize.
+
+If the page is blank or shows console errors:
+- "WebGLNotAvailable" → expected on locked-down browsers; static stage should still show.
+- "ShaderCompileError" → check `src/shaders.ts`; the GLSL log will be in the message.
+- "framebuffer incomplete" → R8 may be unsupported; fall back to RGBA8 in `webgl.ts:createPingPong`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/main.ts
+git commit -m "Wire main: layout → seed → ping-pong → step + render → lifecycle"
+```
+
+---
+
+## Task 11: Resize handling and breakpoint switching
+
+When the user resizes the window, recompute layout, re-rasterize seed, rebuild ping-pong textures, and continue. Throttle to one rebuild per 250ms.
+
+**Files:**
+- Modify: `src/main.ts`
+
+- [ ] **Step 1: Extract bootstrap into restartable function**
+
+Refactor `src/main.ts` to encapsulate the boot logic in a function `start({ canvas, gl })` that can be called multiple times. The first call creates the canvas; subsequent calls just rebuild the seed + ping-pong + lifecycle.
+
+Add to the existing `boot()` after canvas creation:
+
+```ts
+let lifecycle = startSimulation();
+
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    lifecycle.stop();
+    lifecycle = startSimulation();
+  }, 250);
+});
+
+function startSimulation() {
+  const dpr = window.devicePixelRatio || 1;
+  const layoutResult = layout({
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    devicePixelRatio: dpr,
+  });
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+
+  // ... move all the seed + ping-pong + bind + lifecycle code here
+  // and return the LifecycleHandle from startLifecycle.
+}
+```
+
+(Full refactor: pull the existing setup into `startSimulation` body. The function returns the `LifecycleHandle` so resize can stop the previous loop.)
+
+- [ ] **Step 2: Verify resize**
+
+Run: `npm run dev`. Resize between phone-narrow and desktop-wide. After 250ms of settling, the canvas should re-render in the new layout (initials → two-line → one-line) without a full page reload.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/main.ts
+git commit -m "Resize: debounce, recompute layout, rebuild simulation textures"
+```
+
+---
+
+## Task 12: Self-host the heavy condensed display face
+
+The system fallback (Impact / Helvetica Neue) is good enough during development but the brief calls for a heavy condensed display family. Self-host one open-source candidate: **Voyage Bold Condensed** (or alternatives — see Spec §10).
+
+**Files:**
+- Create: `public/fonts/voyage-bold-condensed.woff2`
+- Modify: `src/styles.css`
+- Modify: `src/seed.ts` (font-family constant)
+
+- [ ] **Step 1: Acquire the font**
+
+Choose one open-source heavy condensed face. Acceptable options:
+
+| Name | License | Notes |
+| --- | --- | --- |
+| Voyage Bold Condensed | OFL | Good silhouette for ASCII fill. |
+| Lostgun (Bungee Inline / Bungee) | OFL | Heavy, woodtype feel. |
+| Big Shoulders Display Black | OFL | Very condensed, very heavy. |
+| Anton | OFL | Classic condensed sans, tall. |
+
+Decision: try Anton first — it's a known quantity, well-supported, and ships in a tight subset.
+
+Download the WOFF2 from Google Fonts (subset `latin`, weights `400`). Place it at `public/fonts/anton-regular.woff2`.
+
+- [ ] **Step 2: `@font-face` declaration**
+
+Prepend to `src/styles.css`:
+
+```css
+@font-face {
+  font-family: 'Anton Site';
+  src: url('/fonts/anton-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block; /* avoid FOUT — initial paint must show the right metrics */
+  unicode-range: U+0020-007E, U+00B7; /* ASCII + interpunct for R·D */
+}
+```
+
+Update the body font-family stack:
+
+```css
+body {
+  /* ... */
+  font-family: 'Anton Site', 'Impact', 'Helvetica Neue', sans-serif;
+  font-weight: 400; /* Anton has only one weight */
+  font-stretch: 100%;
+}
+```
+
+- [ ] **Step 3: Update seed.ts to use the same family**
+
+Edit `src/seed.ts`:
+
+```ts
+const DEFAULT_FONT_FAMILY =
+  "'Anton Site', 'Impact', 'Helvetica Neue', sans-serif";
+```
+
+Edit the line where `ctx.font` is assigned to use weight 400:
+
+```ts
+ctx.font = `400 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
+```
+
+- [ ] **Step 4: Wait for font load before rendering**
+
+Modify `src/main.ts` `boot()`:
+
+```ts
+async function boot() {
+  if (prefersReducedMotion()) {
+    document.documentElement.classList.add('reduced-motion');
+    return;
+  }
+
+  // Wait for the display face so the seed rasterizes against the right
+  // letterforms (not the system fallback).
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  }
+
+  // ... rest of boot
+}
+```
+
+- [ ] **Step 5: Verify**
+
+Run: `npm run dev`. The static stage and the canvas should both render in the heavy condensed face. Letterforms should look more like the THINK BUILD ITERATE reference now.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add public/fonts/anton-regular.woff2 src/styles.css src/seed.ts src/main.ts
+git commit -m "Self-host Anton; rasterizer + static stage use the same display face"
+```
+
+---
+
+## Task 13: OG image and favicon
+
+Generate the static social-card image (1200×630 PNG) and the favicon SVG. The OG image is the fully-formed name on the field; same composition as the WebGL-fail / reduced-motion fallback. Favicon is one mark cell on field.
+
+**Files:**
+- Create: `public/og.png`
+- Create: `public/favicon.svg`
+- Create: `scripts/generate-og.ts`
+
+- [ ] **Step 1: Favicon**
+
+Create `public/favicon.svg`:
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="oklch(86% 0.018 165)" />
+  <text x="16" y="22" font-family="ui-monospace, monospace" font-size="20"
+        text-anchor="middle" fill="oklch(18% 0.012 165)">@</text>
+</svg>
+```
+
+(Single mark cell, mark-color `@` on field. Kept abstract; could later be replaced with `R` rendered in the same heavy condensed face.)
+
+- [ ] **Step 2: OG image generation script**
+
+Create `scripts/generate-og.ts`:
+
+```ts
+import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = join(__dirname, '..');
+
+async function main() {
+  await mkdir(join(root, 'public'), { recursive: true });
+
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({
+    viewport: { width: 1200, height: 630 },
+    deviceScaleFactor: 1,
+    reducedMotion: 'reduce', // freeze on the initial state
+  });
+  const page = await ctx.newPage();
+  await page.goto('http://localhost:5173', { waitUntil: 'networkidle' });
+  await page.screenshot({
+    path: join(root, 'public', 'og.png'),
+    type: 'png',
+    omitBackground: false,
+  });
+  await browser.close();
+  console.log('Wrote public/og.png');
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+```
+
+Add an npm script to `package.json`:
+
+```json
+{
+  "scripts": {
+    "generate:og": "tsx scripts/generate-og.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}
+```
+
+Run: `npm install`.
+
+- [ ] **Step 3: Generate the OG image**
+
+Run: `npm run dev` in one terminal. In another:
+
+Run: `npm run generate:og`
+Expected: `public/og.png` written. Inspect it: 1200×630, mineral field, fully-formed ASCII name, no animation, looks like the reduced-motion view.
+
+Stop the dev server.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add public/favicon.svg public/og.png scripts/generate-og.ts package.json package-lock.json
+git commit -m "OG image (frozen reduced-motion screenshot) and favicon SVG"
+```
+
+---
+
+## Task 14: E2E + accessibility tests
+
+Playwright spec that proves: page loads, H1 is accessible, no console errors, and the WebGL-disabled fallback renders the static stage with no second color present.
+
+**Files:**
+- Create: `tests/e2e/home.spec.ts`
+
+- [ ] **Step 1: Write the spec**
+
+Create `tests/e2e/home.spec.ts`:
+
+```ts
+import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+test.describe('home page', () => {
+  test('loads with accessible H1', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+
+    await page.goto('/');
+    await expect(page.locator('h1')).toHaveText('Richard Dowden');
+    expect(errors).toEqual([]);
+  });
+
+  test('passes axe-core a11y scan', async ({ page }) => {
+    await page.goto('/');
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test('reduced-motion: static stage remains', async ({ browser }) => {
+    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await page.goto('/');
+    await expect(page.locator('#stage')).toBeVisible();
+    await expect(page.locator('canvas#canvas')).toHaveCount(0);
+    await ctx.close();
+  });
+
+  test('uses only the field and mark colors', async ({ page }) => {
+    await page.goto('/');
+    // Sample background of body and color of stage line.
+    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const fg = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('#stage .line')!).color,
+    );
+    // We accept either the celadon hex or its rgb() form.
+    expect(bg).not.toBe('rgb(0, 0, 0)');
+    expect(bg).not.toBe('rgb(255, 255, 255)');
+    expect(fg).not.toBe('rgb(0, 0, 0)');
+    expect(fg).not.toBe('rgb(255, 255, 255)');
+  });
+});
+```
+
+- [ ] **Step 2: Run the e2e suite**
+
+Run: `npm run test:e2e`
+Expected: 4 tests pass.
+
+If a test fails:
+- "Cannot find module '@axe-core/playwright'": run `npm install` (it's in devDependencies from Task 1).
+- "axe violations": fix accessibility issues; common offenders include missing `lang` on `<html>` (we set `en`), or a contrast violation if the field/mark choices are too close.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/e2e/home.spec.ts
+git commit -m "E2E: H1 access, axe a11y scan, reduced-motion fallback, two-color guarantee"
+```
+
+---
+
+## Task 15: Manual hue + typeface tuning session
+
+The brief calls out that the field hue and the typeface are "[to be resolved during implementation]" by visual judgement, not specsheet decisions. This task is a deliberate pause: open the site, look at it, tune CSS variables and font-face until it feels right, commit the result. No tests — this is the human-judgement step.
+
+**Files:**
+- Modify: `src/styles.css`
+
+- [ ] **Step 1: Set up a side-by-side hue comparison page**
+
+Create a temporary `compare.html` at the project root:
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Hue compare</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+  <style>
+    body { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; height: 100vh; overflow: hidden; }
+    .swatch { display: grid; place-items: center; }
+    .swatch span { font-family: 'Anton Site', sans-serif; font-size: 18vh; line-height: 1; }
+    .celadon  { --field: oklch(86% 0.018 165); --mark: oklch(18% 0.012 165); background: var(--field); color: var(--mark); }
+    .copper   { --field: oklch(82% 0.040 60);  --mark: oklch(20% 0.020 60);  background: var(--field); color: var(--mark); }
+    .slate    { --field: oklch(80% 0.020 250); --mark: oklch(18% 0.010 250); background: var(--field); color: var(--mark); }
+    .indigo   { --field: oklch(76% 0.030 280); --mark: oklch(20% 0.020 280); background: var(--field); color: var(--mark); }
+    .ochre    { --field: oklch(82% 0.060 90);  --mark: oklch(20% 0.030 90);  background: var(--field); color: var(--mark); }
+  </style>
+</head>
+<body>
+  <div class="swatch celadon"><span>RD</span></div>
+  <div class="swatch copper"><span>RD</span></div>
+  <div class="swatch slate"><span>RD</span></div>
+  <div class="swatch indigo"><span>RD</span></div>
+  <div class="swatch ochre"><span>RD</span></div>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Run the comparison**
+
+Run: `npm run dev`, open `http://localhost:5173/compare.html`. Live with it for ten minutes. Pick the field that holds the "scene sentence" — *recruiter at 11pm in a softly-lit kitchen, looking for something that doesn't match the others*.
+
+Tune chroma + lightness in OKLCH until the picked one passes WCAG AA contrast (use `https://oklch.com` or your eye + a contrast checker).
+
+- [ ] **Step 3: Commit the chosen palette and delete compare.html**
+
+Update `src/styles.css` `:root` with the chosen `--field` and `--mark` values. Update the `<meta name="theme-color">` in `index.html` with the equivalent hex. Delete `compare.html`.
+
+```bash
+rm compare.html
+git add src/styles.css index.html
+git commit -m "Lock palette: <descriptive name> field on near-black mark"
+```
+
+(`<descriptive name>` = whatever you picked. Use a real evocative name, not "celadon" if you ended up on the slate. The commit message tells future-you what was chosen.)
+
+- [ ] **Step 4: Re-generate OG image**
+
+Run: `npm run dev` (one terminal), `npm run generate:og` (another).
+
+```bash
+git add public/og.png
+git commit -m "Regenerate OG image after palette lock"
+```
+
+---
+
+## Task 16: Build verification + size budget check
+
+Verify the production build comes in under the size budget (target 30KB JS gzipped) and that all bytes ship without errors.
+
+**Files:** none (verification task).
+
+- [ ] **Step 1: Run production build**
+
+Run: `npm run build`
+Expected: Vite emits `dist/` with HTML, CSS, JS chunks, and assets.
+
+- [ ] **Step 2: Inspect bundle size**
+
+Run: `ls -lh dist/assets/*.js && gzip -c dist/assets/*.js | wc -c`
+
+Expected: gzipped JS under ~30KB.
+
+If over budget:
+- Verify TypeScript isn't emitting helper polyfills (set `target: 'es2022'` in `tsconfig.json` and `vite.config.ts`).
+- Inline shaders are strings; minifier can collapse them. Check `vite.config.ts` `build.minify: 'esbuild'`.
+- Drop OffscreenCanvas usage if not strictly needed (saves a few hundred bytes of feature detection).
+
+- [ ] **Step 3: Preview the production build**
+
+Run: `npm run preview`
+Open `http://localhost:4173`. Verify the live behavior matches `npm run dev`: settling pause, simulation runs, no console errors, reduced-motion still serves the static stage.
+
+- [ ] **Step 4: Commit (if any tweaks)**
+
+If you changed config files to hit the budget:
+
+```bash
+git add vite.config.ts tsconfig.json
+git commit -m "Build: trim bundle to <30KB gzipped JS"
+```
+
+If no changes were needed, skip the commit.
+
+---
+
+## Task 17: Deploy
+
+Push to a static host. Cloudflare Pages or Vercel both work; pick one.
+
+**Files:**
+- Create: `wrangler.toml` *(if Cloudflare Pages)* or `vercel.json` *(if Vercel)*
+
+- [ ] **Step 1 (Cloudflare Pages): Create config**
+
+Create `wrangler.toml`:
+
+```toml
+name = "richarddowden-com"
+compatibility_date = "2026-05-06"
+pages_build_output_dir = "dist"
+```
+
+Push to a GitHub repo, connect to Cloudflare Pages, set build command to `npm run build` and output directory to `dist`. Map the custom domain `richarddowden.com` once DNS is set.
+
+- [ ] **Step 1 (Vercel alternative): Create config**
+
+Create `vercel.json`:
+
+```json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": null,
+  "headers": [
+    {
+      "source": "/fonts/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
+}
+```
+
+`vercel deploy --prod` from CLI, or push to GitHub and connect through the Vercel dashboard.
+
+- [ ] **Step 2: Verify production behavior**
+
+Open the live URL on three devices:
+
+- Desktop Chrome: see the simulation.
+- iPhone Safari (real device, not just devtools): see the `R·D` initials and the simulation.
+- A computer with WebGL disabled (about:config in Firefox: `webgl.disabled = true`): see the static stage, identical visual to reduced-motion.
+
+Run Lighthouse against the production URL; target Performance ≥95, Accessibility 100, Best Practices ≥95, SEO ≥90.
+
+- [ ] **Step 3: Commit and tag**
+
+```bash
+git add wrangler.toml  # or vercel.json
+git commit -m "Deploy config (Cloudflare Pages|Vercel)"
+git tag v0.1.0 -m "First public release"
+```
+
+---
+
+## Self-Review
+
+**Spec coverage check** (one task per requirement):
+
+| Spec section / requirement | Implemented in |
+| --- | --- |
+| Single page, no chrome | Task 2 (HTML shell) |
+| Drenched mineral field, two hues only | Task 2 + Task 15 (palette tuning) |
+| Heavy condensed display | Task 12 (Anton self-host) |
+| ASCII fill constituting letters | Task 6 (atlas) + Task 8 (render shader) |
+| Adaptive layout (1-line / 2-line / R·D) | Task 3 (layout) + Task 2 (CSS) |
+| Initial seed = rasterized name | Task 5 (seed.ts) |
+| Custom CA rule, swappable | Task 4 (rules) + Task 8 (#define) |
+| Pre-formed initial state, 1.5s settling | Task 9 (lifecycle settlingMs) |
+| Continuous CA, no reset | Task 9 (lifecycle, no reset path) |
+| Reduced-motion → static stage | Task 2 (CSS) + Task 10 (boot guard) |
+| WebGL-fail → static stage | Task 7 (typed error) + Task 10 (catch + leave stage) |
+| Tab-hidden pause | Task 9 (visibility listener) |
+| FPS throttle | Task 9 (FPS sampling) |
+| Offscreen H1, aria-hidden canvas | Task 2 (HTML) + Task 10 (canvas attr) |
+| WCAG AA contrast | Task 15 (palette tune) + Task 14 (axe scan) |
+| OG image | Task 13 |
+| Favicon | Task 13 |
+| ≤30KB JS gzip | Task 16 |
+| No `#000` / `#fff` | Task 2 (palette) + Task 14 (e2e check) |
+| Resize handling | Task 11 |
+| Hosting | Task 17 |
+
+No gaps.
+
+**Placeholder scan:** none. Every step has either complete code or an explicit verification command.
+
+**Type-consistency check:** `LayoutResult` from Task 3 is consumed unchanged in Task 5 (`rasterizeSeed` takes `lines`, `fontSizePx`, `cellSize` matching its keys) and Task 10 (`main.ts` reads `layoutResult.cellSize`, `.lines`, `.fontSizePx`). `RuleId` in Task 4 (`'conway' | 'briansBrain' | 'dayAndNight' | 'custom'`) matches `defineRule()` arg type in Task 8 and the call site in Task 10 (`buildStepShader('custom')`). `WebGLNotAvailable` and `ShaderCompileError` from Task 7 are caught by name in Task 10. `LifecycleHandle` from Task 9 is consumed in Task 11 (resize-restart). Consistent.
+
+---
+
+## Open Questions still deferred to implementation
+
+These are flagged in the spec §10 and ride through the plan as deferred decisions, **not** as plan placeholders:
+
+1. **Specific field hue.** Resolved live in Task 15.
+2. **Specific display typeface.** Anton is the plan default; revisit during Task 15 if the rasterizer doesn't read well at the chosen cell size.
+3. **CA rule parameters.** Custom rule is `B36/S2348` per Task 4; tune by visual inspection during Task 10. Conway / Brian's Brain / Day-and-Night remain swappable for comparison.
+4. **Glyph alphabet.** Defaults to `. : ; + * # @ ░` in Task 6; revisit in Task 15.
+5. **Hosting.** Decision in Task 17 — Cloudflare Pages is the default.
