@@ -2,9 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#cfd9d3" />
     <title>Richard Dowden</title>
+    <meta name="description" content="Richard Dowden — a name, an ASCII rendering, a cellular automaton allowed to run." />
+    <meta property="og:title" content="Richard Dowden" />
+    <meta property="og:description" content="A name, an ASCII rendering, a cellular automaton allowed to run." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <h1 class="sr-only">Richard Dowden</h1>
+    <div id="stage" aria-hidden="true">
+      <span class="line" data-text="RICHARD">RICHARD</span>
+      <span class="line" data-text="DOWDEN">DOWDEN</span>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
