@@ -1,5 +1,8 @@
-export const ALPHABET = ['.', ':', ';', '+', '*', '#', '@', '░'] as const;
-export type Glyph = typeof ALPHABET[number];
+// Default alphabet: density-graded (Paul-Bourke-style gradient subset).
+// Light (.) to heavy (%); coherent ASCII-art family. Used when a caller
+// doesn't supply its own alphabet.
+export const ALPHABET = ['.', ':', '-', '=', '+', '*', '#', '%'] as const;
+export type Glyph = string;
 
 export interface GlyphAtlas {
   canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -9,8 +12,12 @@ export interface GlyphAtlas {
 
 const ATLAS_FONT_FAMILY = "'IBM Plex Mono', 'Menlo', 'Monaco', monospace";
 
-export function buildGlyphAtlas(cellSize: number, markColor: string): GlyphAtlas {
-  const w = cellSize * ALPHABET.length;
+export function buildGlyphAtlas(
+  cellSize: number,
+  markColor: string,
+  alphabet: readonly string[] = ALPHABET,
+): GlyphAtlas {
+  const w = cellSize * alphabet.length;
   const h = cellSize;
   const canvas =
     typeof OffscreenCanvas !== 'undefined'
@@ -32,15 +39,13 @@ export function buildGlyphAtlas(cellSize: number, markColor: string): GlyphAtlas
   ctx.fillStyle = markColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  // Mono atlas glyphs: render at slightly less than cellSize so they don't
-  // touch their bounds — we want air around each mark.
   ctx.font = `${Math.floor(cellSize * 0.9)}px ${ATLAS_FONT_FAMILY}`;
 
-  for (let i = 0; i < ALPHABET.length; i++) {
+  for (let i = 0; i < alphabet.length; i++) {
     const cx = i * cellSize + cellSize / 2;
     const cy = cellSize / 2;
-    ctx.fillText(ALPHABET[i]!, cx, cy);
+    ctx.fillText(alphabet[i]!, cx, cy);
   }
 
-  return { canvas, cellSize, alphabetLength: ALPHABET.length };
+  return { canvas, cellSize, alphabetLength: alphabet.length };
 }

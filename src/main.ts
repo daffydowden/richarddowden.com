@@ -13,26 +13,36 @@ import { VS_QUAD, FS_RENDER, buildStepShader } from './shaders';
 import { startLifecycle, prefersReducedMotion, type LifecycleHandle } from './lifecycle';
 
 interface Theme {
-  field: string;     // CSS color (oklch ok)
-  mark: string;      // CSS color
-  fontFamily: string;// font-family stack including a fallback
+  field: string;            // CSS color (oklch ok)
+  mark: string;             // CSS color
+  fontFamily: string;       // font-family stack including a fallback
+  alphabet: readonly string[]; // ASCII-art glyph alphabet for the cell render
 }
 
 const THEMES: Theme[] = [
   {
+    // Density gradient: a clean punctuation halftone. Anton's
+    // condensed sans suits the typewriter feel.
     field: 'oklch(86% 0.018 165)',
     mark: 'oklch(18% 0.012 165)',
     fontFamily: "'Anton', 'Impact', 'Helvetica Neue', sans-serif",
+    alphabet: ['.', ':', '-', '=', '+', '*', '#', '%'],
   },
   {
+    // Block dither: classic terminal halftone. The wider Bebas Neue
+    // cells give the block characters room to read as solid fills.
     field: 'oklch(80% 0.022 250)',
     mark: 'oklch(20% 0.014 250)',
     fontFamily: "'Bebas Neue', 'Impact', 'Helvetica Neue', sans-serif",
+    alphabet: ['░', '▒', '▓', '█', '▌', '▐', '▀', '▄'],
   },
   {
+    // Decorative dingbats: stars and asterisks for the serif Abril
+    // Fatface — print-catalog ornament rather than terminal halftone.
     field: 'oklch(86% 0.060 90)',
     mark: 'oklch(22% 0.030 90)',
     fontFamily: "'Abril Fatface', 'Times New Roman', serif",
+    alphabet: ['·', '∗', '✦', '✶', '✺', '❋', '✻', '✿'],
   },
 ];
 
@@ -106,7 +116,7 @@ function startRun(
 
   const markColor = readMarkColorFromCSS();
   const markRgbCss = `rgb(${markColor.map((c) => Math.round(c * 255)).join(',')})`;
-  const atlas = buildGlyphAtlas(cellSize, markRgbCss);
+  const atlas = buildGlyphAtlas(cellSize, markRgbCss, theme.alphabet);
 
   let stepProgram: WebGLProgram;
   let renderProgram: WebGLProgram;
