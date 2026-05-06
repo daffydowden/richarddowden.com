@@ -6,8 +6,26 @@
   font-display: block;
   unicode-range: U+0020-007E, U+00B7;
 }
+@font-face {
+  font-family: 'Bebas Neue';
+  src: url('/fonts/bebas-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00B7;
+}
+@font-face {
+  font-family: 'Abril Fatface';
+  src: url('/fonts/abril-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00B7;
+}
 
 :root {
+  /* Theme tokens are written by main.ts; these are the boot defaults
+     before JS runs (used by SSR / no-JS / WebGL-fail visitors). */
   --field: oklch(86% 0.018 165);   /* dusty celadon */
   --mark:  oklch(18% 0.012 165);   /* near-black, tinted toward field */
 }
@@ -45,6 +63,10 @@ html, body {
   width: 100vw;
   height: 100dvh;
   display: block;
+  /* Subtle hint that the canvas is interactive: pointer cursor without
+     any visible UI. First click starts the simulation; subsequent
+     clicks cycle theme. */
+  cursor: pointer;
 }
 
 /* Static fallback image. Same artifact as og.png — a frozen render of the

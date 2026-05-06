@@ -12,6 +12,35 @@ import {
 import { VS_QUAD, FS_RENDER, buildStepShader } from './shaders';
 import { startLifecycle, prefersReducedMotion, type LifecycleHandle } from './lifecycle';
 
+interface Theme {
+  field: string;     // CSS color (oklch ok)
+  mark: string;      // CSS color
+  fontFamily: string;// font-family stack including a fallback
+}
+
+const THEMES: Theme[] = [
+  {
+    field: 'oklch(86% 0.018 165)',
+    mark: 'oklch(18% 0.012 165)',
+    fontFamily: "'Anton', 'Impact', 'Helvetica Neue', sans-serif",
+  },
+  {
+    field: 'oklch(80% 0.022 250)',
+    mark: 'oklch(20% 0.014 250)',
+    fontFamily: "'Bebas Neue', 'Impact', 'Helvetica Neue', sans-serif",
+  },
+  {
+    field: 'oklch(86% 0.060 90)',
+    mark: 'oklch(22% 0.030 90)',
+    fontFamily: "'Abril Fatface', 'Times New Roman', serif",
+  },
+];
+
+function applyTheme(theme: Theme) {
+  document.documentElement.style.setProperty('--field', theme.field);
+  document.documentElement.style.setProperty('--mark', theme.mark);
+}
+
 function readMarkColorFromCSS(): [number, number, number] {
   const probe = document.createElement('span');
   probe.style.color = 'var(--mark)';
@@ -37,11 +66,19 @@ function showFallback() {
 }
 
 interface Run {
-  /** Cancel the lifecycle loop and release per-run GPU resources. */
+  /** Render the T=0 frame and return immediately (no animation loop). */
+  render: () => void;
+  /** Start the animation loop. Idempotent. */
+  start: () => void;
+  /** Cancel the loop and release per-run GPU resources. */
   stop: () => void;
 }
 
-function startRun(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Run | null {
+function startRun(
+  canvas: HTMLCanvasElement,
+  gl: WebGL2RenderingContext,
+  theme: Theme,
+): Run | null {
   const dpr = window.devicePixelRatio || 1;
   const layoutResult = layout({
     viewportWidth: window.innerWidth,
@@ -64,6 +101,7 @@ function startRun(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Run | 
     height: seedH,
     fontSizePx: layoutResult.fontSizePx,
     cellSize,
+    fontFamily: theme.fontFamily,
   });
 
   const markColor = readMarkColorFromCSS();
@@ -160,22 +198,25 @@ function startRun(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Run | 
     gl.deleteFramebuffer(ping.write.fb);
   }
 
-  if (prefersReducedMotion()) {
-    render();
-    return { stop: disposeGpuResources };
-  }
-
-  const lifecycle: LifecycleHandle = startLifecycle({
-    settlingMs: 2500,
-    initialGenerationsPerSecond: 6,
-    minGenerationsPerSecond: 2,
-    step,
-    render,
-  });
+  let lifecycle: LifecycleHandle | null = null;
 
   return {
+    render,
+    start() {
+      if (lifecycle) return;
+      lifecycle = startLifecycle({
+        // Settling here is short because the user has just clicked. They
+        // know it's about to move; no need to hold the static frame.
+        settlingMs: 250,
+        initialGenerationsPerSecond: 6,
+        minGenerationsPerSecond: 2,
+        step,
+        render,
+      });
+    },
     stop() {
-      lifecycle.stop();
+      lifecycle?.stop();
+      lifecycle = null;
       disposeGpuResources();
     },
   };
@@ -201,14 +242,41 @@ async function boot() {
   }
   const { gl } = bundle;
 
-  let run = startRun(canvas, gl);
+  let themeIndex = 0;
+  applyTheme(THEMES[themeIndex]!);
+
+  let run: Run | null = startRun(canvas, gl, THEMES[themeIndex]!);
+  run?.render();
+
+  // Reduced-motion: render T=0 of theme 0 and don't react to clicks.
+  // The page is calm. The visitor sees the name and that's it.
+  if (prefersReducedMotion()) return;
+
+  let started = false;
+  canvas.addEventListener('click', () => {
+    if (!started) {
+      // First click: start the simulation in the current theme.
+      run?.start();
+      started = true;
+      return;
+    }
+    // Subsequent clicks: advance theme, rebuild run, kick simulation.
+    themeIndex = (themeIndex + 1) % THEMES.length;
+    applyTheme(THEMES[themeIndex]!);
+    run?.stop();
+    run = startRun(canvas, gl, THEMES[themeIndex]!);
+    run?.render();
+    run?.start();
+  });
 
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       run?.stop();
-      run = startRun(canvas, gl);
+      run = startRun(canvas, gl, THEMES[themeIndex]!);
+      run?.render();
+      if (started) run?.start();
     }, 250);
   });
 }

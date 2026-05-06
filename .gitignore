@@ -10,3 +10,4 @@ test-results/
 playwright-report/
 scripts/inspect.mjs
 scripts/resize-test.mjs
+scripts/click-test.mjs

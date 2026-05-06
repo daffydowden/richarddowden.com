@@ -4,6 +4,8 @@ export interface SeedInput {
   height: number;         // canvas height in CSS pixels
   fontSizePx: number;     // cap height target
   cellSize: number;       // CA cell size in px (output buffer is width/cellSize x height/cellSize)
+  /** Caller-supplied font-family stack. Falls back to the Anton stack. */
+  fontFamily?: string;
   /** Override canvas factory for tests / non-OffscreenCanvas environments. */
   createCanvas?: (w: number, h: number) => HTMLCanvasElement | OffscreenCanvas;
 }
@@ -39,7 +41,7 @@ export function rasterizeSeed(input: SeedInput): Uint8Array {
   ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.font = `400 ${fontSizePx}px ${DEFAULT_FONT_FAMILY}`;
+  ctx.font = `400 ${fontSizePx}px ${input.fontFamily ?? DEFAULT_FONT_FAMILY}`;
 
   // 1.15: fontSizePx is the cap height; 1.15 leaves a generous gap
   // between stacked lines so the two-line layout breathes.
