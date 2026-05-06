@@ -18,11 +18,16 @@ import {
   type FigletSet,
 } from './figlet-templates';
 
+type CARule = 'conway' | 'briansBrain' | 'dayAndNight' | 'custom';
+
 interface Theme {
   field: string;
   mark: string;
   fontFamily: string;
   alphabet: readonly string[];
+  /** Per-theme CA personality. Conway thins, Brian's Brain pulses in
+   *  waves, Day-and-Night bursts symmetric, Custom blooms dense. */
+  rule: CARule;
   /** When set, the seed is the figlet template (not a rasterized font),
    *  and each cell renders the glyph that lives at that position in the
    *  template — no random hashing. */
@@ -35,30 +40,30 @@ const THEMES: Theme[] = [
     mark: 'oklch(18% 0.012 165)',
     fontFamily: "'Anton', 'Impact', 'Helvetica Neue', sans-serif",
     alphabet: ['.', ':', '-', '=', '+', '*', '#', '%'],
+    rule: 'conway',
   },
   {
     field: 'oklch(86% 0.060 90)',
     mark: 'oklch(22% 0.030 90)',
     fontFamily: "'Abril Fatface', 'Times New Roman', serif",
     alphabet: ['·', '∗', '✦', '✶', '✺', '❋', '✻', '✿'],
+    rule: 'briansBrain',
   },
-  // Theme 3: figlet "Roman" — vintage mainframe printout. The
-  // glyphs are the literal characters from the figlet template, not
-  // randomly chosen.
   {
     field: 'oklch(82% 0.030 60)',         // warm muted ash
     mark: 'oklch(20% 0.018 60)',
     fontFamily: "'Anton', sans-serif",    // unused for figlet rendering
     alphabet: ROMAN.alphabet,
     figlet: ROMAN,
+    rule: 'dayAndNight',
   },
-  // Theme 4: figlet "Univers" — heavier, more rectilinear printout.
   {
     field: 'oklch(82% 0.020 290)',        // dusky lilac
     mark: 'oklch(20% 0.018 290)',
     fontFamily: "'Anton', sans-serif",
     alphabet: UNIVERS.alphabet,
     figlet: UNIVERS,
+    rule: 'custom',
   },
 ];
 
@@ -250,7 +255,7 @@ function startRun(
   let stepProgram: WebGLProgram;
   let renderProgram: WebGLProgram;
   try {
-    stepProgram = linkProgram(gl, VS_QUAD, buildStepShader('custom'));
+    stepProgram = linkProgram(gl, VS_QUAD, buildStepShader(theme.rule));
     renderProgram = linkProgram(gl, VS_QUAD, FS_RENDER);
   } catch (e) {
     if (e instanceof ShaderCompileError) {

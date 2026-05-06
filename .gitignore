@@ -12,3 +12,5 @@ scripts/inspect.mjs
 scripts/resize-test.mjs
 scripts/click-test.mjs
 scripts/perf-test.mjs
+scripts/devtools-profile.mjs
+scripts/density-test.mjs
