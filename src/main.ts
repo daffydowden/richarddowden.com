@@ -10,7 +10,7 @@ import {
   ShaderCompileError,
 } from './webgl';
 import { VS_QUAD, FS_RENDER, buildStepShader } from './shaders';
-import { startLifecycle, prefersReducedMotion } from './lifecycle';
+import { startLifecycle, prefersReducedMotion, type LifecycleHandle } from './lifecycle';
 
 function readMarkColorFromCSS(): [number, number, number] {
   const probe = document.createElement('span');
@@ -28,7 +28,6 @@ function readMarkColorFromCSS(): [number, number, number] {
 
 function showFallback() {
   document.body.classList.add('webgl-unavailable');
-  // Avoid duplicate fallback if WebGL fails twice (e.g., after resize).
   if (document.querySelector('img.fallback')) return;
   const img = document.createElement('img');
   img.src = '/og.png';
@@ -37,14 +36,12 @@ function showFallback() {
   document.body.appendChild(img);
 }
 
-async function boot() {
-  if (document.fonts && document.fonts.ready) {
-    await document.fonts.ready;
-  }
+interface Run {
+  /** Cancel the lifecycle loop and release per-run GPU resources. */
+  stop: () => void;
+}
 
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement | null;
-  if (!canvas) return;
-
+function startRun(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Run | null {
   const dpr = window.devicePixelRatio || 1;
   const layoutResult = layout({
     viewportWidth: window.innerWidth,
@@ -54,18 +51,6 @@ async function boot() {
 
   canvas.width = Math.floor(window.innerWidth * dpr);
   canvas.height = Math.floor(window.innerHeight * dpr);
-
-  let bundle;
-  try {
-    bundle = createBundle(canvas);
-  } catch (e) {
-    if (e instanceof WebGLNotAvailable) {
-      showFallback();
-      return;
-    }
-    throw e;
-  }
-  const { gl } = bundle;
 
   const cellSize = layoutResult.cellSize;
   const gridW = Math.floor(canvas.width / cellSize);
@@ -94,7 +79,7 @@ async function boot() {
     if (e instanceof ShaderCompileError) {
       console.error(e);
       showFallback();
-      return;
+      return null;
     }
     throw e;
   }
@@ -113,7 +98,7 @@ async function boot() {
   } catch (e) {
     console.error('ping-pong setup failed:', e);
     showFallback();
-    return;
+    return null;
   }
   const atlasTex = uploadTexture(gl, atlas.canvas as TexImageSource);
 
@@ -140,7 +125,7 @@ async function boot() {
   function render() {
     gl.useProgram(renderProgram);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, canvas!.width, canvas!.height);
+    gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
@@ -164,18 +149,67 @@ async function boot() {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  if (prefersReducedMotion()) {
-    // Render T=0 once. No animation loop.
-    render();
-    return;
+  function disposeGpuResources() {
+    gl.deleteBuffer(quadBuf);
+    gl.deleteProgram(stepProgram);
+    gl.deleteProgram(renderProgram);
+    gl.deleteTexture(atlasTex);
+    gl.deleteTexture(ping.read.tex);
+    gl.deleteTexture(ping.write.tex);
+    gl.deleteFramebuffer(ping.read.fb);
+    gl.deleteFramebuffer(ping.write.fb);
   }
 
-  startLifecycle({
+  if (prefersReducedMotion()) {
+    render();
+    return { stop: disposeGpuResources };
+  }
+
+  const lifecycle: LifecycleHandle = startLifecycle({
     settlingMs: 2500,
     initialGenerationsPerSecond: 6,
     minGenerationsPerSecond: 2,
     step,
     render,
+  });
+
+  return {
+    stop() {
+      lifecycle.stop();
+      disposeGpuResources();
+    },
+  };
+}
+
+async function boot() {
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  }
+
+  const canvas = document.getElementById('canvas') as HTMLCanvasElement | null;
+  if (!canvas) return;
+
+  let bundle;
+  try {
+    bundle = createBundle(canvas);
+  } catch (e) {
+    if (e instanceof WebGLNotAvailable) {
+      showFallback();
+      return;
+    }
+    throw e;
+  }
+  const { gl } = bundle;
+
+  let run = startRun(canvas, gl);
+
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      run?.stop();
+      run = startRun(canvas, gl);
+    }, 250);
   });
 }
 
