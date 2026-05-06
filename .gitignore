@@ -6,3 +6,5 @@ dist/
 .env.local
 .env.*.local
 .worktrees/
+test-results/
+playwright-report/
