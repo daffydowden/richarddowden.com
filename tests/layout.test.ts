@@ -54,4 +54,13 @@ describe('layout', () => {
     const r = layout({ viewportWidth: 1024, viewportHeight: 768 });
     expect(r.fontSizePx % r.cellSize).toBe(0);
   });
+
+  it('fontSizePx is non-negative for degenerate viewports', () => {
+    const zeroH = layout({ viewportWidth: 1024, viewportHeight: 0 });
+    const zeroW = layout({ viewportWidth: 0, viewportHeight: 768 });
+    const zeroBoth = layout({ viewportWidth: 0, viewportHeight: 0 });
+    expect(zeroH.fontSizePx).toBeGreaterThanOrEqual(0);
+    expect(zeroW.fontSizePx).toBeGreaterThanOrEqual(0);
+    expect(zeroBoth.fontSizePx).toBeGreaterThanOrEqual(0);
+  });
 });

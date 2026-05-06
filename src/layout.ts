@@ -40,7 +40,7 @@ export function layout(input: LayoutInput): LayoutResult {
   const linesShown = lines.length;
   const verticalCap = (viewportHeight - padding * 2) / linesShown;
   const target = Math.min(rawFontSize, verticalCap);
-  const fontSizePx = Math.floor(target / cellSize) * cellSize;
+  const fontSizePx = Math.max(0, Math.floor(target / cellSize) * cellSize);
 
   return { copy, lines, cellSize, fontSizePx };
 }
