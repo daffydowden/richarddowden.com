@@ -109,7 +109,11 @@ void main() {
   vec2 cell = floor(vUv * uGridSize);
   vec2 inCell = fract(vUv * uGridSize);
 
-  vec2 uvState = (cell + 0.5) / uGridSize;
+  // The seed was uploaded from a canvas (top-down rows) into a WebGL
+  // texture (bottom-up rows). Flip Y when sampling state so canvas
+  // top renders at screen top.
+  vec2 cellFlipped = vec2(cell.x, uGridSize.y - 1.0 - cell.y);
+  vec2 uvState = (cellFlipped + 0.5) / uGridSize;
   float state = texture(uState, uvState).r;
 
   if (state < 0.25) discard;

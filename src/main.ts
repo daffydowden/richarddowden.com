@@ -171,9 +171,9 @@ async function boot() {
   }
 
   startLifecycle({
-    settlingMs: 1500,
-    initialGenerationsPerSecond: 15,
-    minGenerationsPerSecond: 4,
+    settlingMs: 2500,
+    initialGenerationsPerSecond: 6,
+    minGenerationsPerSecond: 2,
     step,
     render,
   });
