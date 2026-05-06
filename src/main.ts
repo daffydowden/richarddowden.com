@@ -227,8 +227,9 @@ async function boot() {
     await document.fonts.ready;
   }
 
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement | null;
-  if (!canvas) return;
+  const canvasOrNull = document.getElementById('canvas') as HTMLCanvasElement | null;
+  if (!canvasOrNull) return;
+  const canvas: HTMLCanvasElement = canvasOrNull;
 
   let bundle;
   try {
@@ -252,36 +253,52 @@ async function boot() {
   // The page is calm. The visitor sees the name and that's it.
   if (prefersReducedMotion()) return;
 
+  // Each theme load goes through the same gate: render T=0, wait 5s
+  // or a click to begin the simulation. After the simulation is
+  // running, the next click switches to the next theme and re-enters
+  // the gate.
   let started = false;
-  // Auto-start fallback: if the visitor doesn't click within 5s the
-  // simulation begins on its own so the canvas isn't a dead image for
-  // anyone who didn't notice the cursor:pointer affordance.
-  let autoStartTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-    if (!started) {
-      run?.start();
-      started = true;
-    }
-    autoStartTimer = null;
-  }, 5000);
+  let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
 
-  canvas.addEventListener('click', () => {
-    if (!started) {
-      // First click: cancel the auto-start timer and start now.
-      if (autoStartTimer !== null) {
-        clearTimeout(autoStartTimer);
-        autoStartTimer = null;
-      }
-      run?.start();
-      started = true;
-      return;
+  function cancelAutoStart() {
+    if (autoStartTimer !== null) {
+      clearTimeout(autoStartTimer);
+      autoStartTimer = null;
     }
-    // Subsequent clicks: advance theme, rebuild run, kick simulation.
+  }
+
+  function scheduleAutoStart() {
+    cancelAutoStart();
+    autoStartTimer = setTimeout(() => {
+      if (!started) {
+        run?.start();
+        started = true;
+      }
+      autoStartTimer = null;
+    }, 5000);
+  }
+
+  function advanceTheme() {
     themeIndex = (themeIndex + 1) % THEMES.length;
     applyTheme(THEMES[themeIndex]!);
+    cancelAutoStart();
     run?.stop();
     run = startRun(canvas, gl, THEMES[themeIndex]!);
     run?.render();
-    run?.start();
+    started = false;
+    scheduleAutoStart();
+  }
+
+  scheduleAutoStart();
+
+  canvas.addEventListener('click', () => {
+    if (!started) {
+      cancelAutoStart();
+      run?.start();
+      started = true;
+    } else {
+      advanceTheme();
+    }
   });
 
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
