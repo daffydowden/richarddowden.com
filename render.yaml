@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: richarddowden-com
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    pullRequestPreviewsEnabled: true
+    domains:
+      - richarddowden.com
+      - www.richarddowden.com
