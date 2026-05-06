@@ -14,3 +14,4 @@ scripts/click-test.mjs
 scripts/perf-test.mjs
 scripts/devtools-profile.mjs
 scripts/density-test.mjs
+scripts/gen-interval.mjs

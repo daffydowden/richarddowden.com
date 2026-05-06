@@ -351,7 +351,6 @@ function startRun(
       lifecycle = startLifecycle({
         settlingMs: 250,
         initialGenerationsPerSecond: 6,
-        minGenerationsPerSecond: 2,
         step,
         render,
       });

@@ -1,8 +1,7 @@
 export interface LifecycleConfig {
   settlingMs: number;
   initialGenerationsPerSecond: number;
-  minGenerationsPerSecond: number;
-  /** Called once per animation frame to render. */
+  /** Called after each CA step to display the new state. */
   render: () => void;
   /** Called once per CA generation step. */
   step: () => void;
@@ -14,63 +13,41 @@ export interface LifecycleHandle {
 
 export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
   let stopped = false;
-  let rafId: number | null = null;
-  let lastFrameTime = performance.now();
-  let lastStepTime = lastFrameTime;
-  const initialInterval = 1000 / cfg.initialGenerationsPerSecond;
-  const minInterval = 1000 / cfg.minGenerationsPerSecond;
-  let stepInterval = initialInterval;
-  let elapsedSinceStart = 0;
-  let frameCount = 0;
-  let fpsAccumulator = 0;
+  let timerId: ReturnType<typeof setTimeout> | null = null;
+  const stepInterval = 1000 / cfg.initialGenerationsPerSecond;
 
-  function loop(now: number) {
+  // Drive stepping with setTimeout instead of RAF. The previous RAF loop
+  // ran a no-op callback at 60-120 Hz and decided whether to step using a
+  // threshold (`now - lastStepTime >= stepInterval`); with a 6 gen/s
+  // target, that threshold lands awkwardly between vsync intervals (e.g.
+  // 167ms is just over 10 vsyncs at 60Hz), producing a visible
+  // 10-vs-11-vsync alternation. Stepping on a fixed timer locks the
+  // cadence cleanly. Rendering is part of the same callback — the GL
+  // command stream lands on the next compositor frame regardless of
+  // whether we're inside RAF or not.
+  function tick() {
     if (stopped) return;
-    const dt = now - lastFrameTime;
-    lastFrameTime = now;
-    elapsedSinceStart += dt;
-
-    // Render is coupled to step: between generations the output pixels are
-    // identical (no inter-frame fade), so calling render() per RAF is pure
-    // waste. Drives ~10x fewer GPU draws on a 60Hz display at 6 gen/s.
-    if (elapsedSinceStart >= cfg.settlingMs && now - lastStepTime >= stepInterval) {
-      cfg.step();
-      cfg.render();
-      lastStepTime = now;
-    }
-
-    // FPS tracking: sample over 1s windows. Symmetric damper — if the host
-    // is keeping up we ramp step rate back toward the initial target.
-    frameCount++;
-    fpsAccumulator += dt;
-    if (fpsAccumulator >= 1000) {
-      const fps = (frameCount * 1000) / fpsAccumulator;
-      if (fps < 30) {
-        stepInterval = Math.min(minInterval, stepInterval * 2);
-      } else if (fps > 50 && stepInterval > initialInterval) {
-        stepInterval = Math.max(initialInterval, stepInterval / 1.5);
-      }
-      frameCount = 0;
-      fpsAccumulator = 0;
-    }
-
-    rafId = requestAnimationFrame(loop);
+    cfg.step();
+    cfg.render();
+    timerId = setTimeout(tick, stepInterval);
   }
 
+  // Initial settling delay: lets the seed sit visible before erosion.
+  timerId = setTimeout(tick, cfg.settlingMs);
+
   function pause() {
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
+    if (timerId !== null) {
+      clearTimeout(timerId);
+      timerId = null;
     }
   }
   function resume() {
-    if (rafId === null && !stopped) {
-      lastFrameTime = performance.now();
-      lastStepTime = lastFrameTime;
-      // The browser may have cleared the drawing buffer while hidden;
-      // repaint immediately so the canvas isn't blank on return.
+    if (timerId === null && !stopped) {
+      // Browser may have cleared the drawing buffer while hidden;
+      // repaint immediately so the canvas isn't blank on return,
+      // then resume the step cadence.
       cfg.render();
-      rafId = requestAnimationFrame(loop);
+      timerId = setTimeout(tick, stepInterval);
     }
   }
 
@@ -79,8 +56,6 @@ export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
     else resume();
   }
   document.addEventListener('visibilitychange', visibility);
-
-  rafId = requestAnimationFrame(loop);
 
   return {
     stop() {
