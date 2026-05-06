@@ -37,14 +37,6 @@ const THEMES: Theme[] = [
     alphabet: ['.', ':', '-', '=', '+', '*', '#', '%'],
   },
   {
-    // Block dither: single solid █ so the letterforms read as ordered
-    // typography at T=0 and only disintegrate as the CA evolves.
-    field: 'oklch(80% 0.022 250)',
-    mark: 'oklch(20% 0.014 250)',
-    fontFamily: "'Bebas Neue', 'Impact', 'Helvetica Neue', sans-serif",
-    alphabet: ['█'],
-  },
-  {
     field: 'oklch(86% 0.060 90)',
     mark: 'oklch(22% 0.030 90)',
     fontFamily: "'Abril Fatface', 'Times New Roman', serif",

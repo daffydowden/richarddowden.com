@@ -7,14 +7,6 @@
   unicode-range: U+0020-007E, U+00B7;
 }
 @font-face {
-  font-family: 'Bebas Neue';
-  src: url('/fonts/bebas-latin.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+0020-007E, U+00B7;
-}
-@font-face {
   font-family: 'Abril Fatface';
   src: url('/fonts/abril-latin.woff2') format('woff2');
   font-weight: 400;
