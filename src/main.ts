@@ -197,20 +197,12 @@ function packStateGlyph(state: Uint8Array, glyphMap: Uint8Array): Uint8Array {
   return out;
 }
 
-/**
- * Cap the WebGL backing-store resolution. The render shader runs once
- * per device pixel; on a retina display rendering at DPR=2 quadruples
- * fragment count for ASCII glyphs that look essentially identical at
- * DPR=1. Layout uses the same capped value so cellSize matches.
- */
-const RENDER_DPR_CAP = 1;
-
 function startRun(
   canvas: HTMLCanvasElement,
   gl: WebGL2RenderingContext,
   theme: Theme,
 ): Run | null {
-  const dpr = Math.min(window.devicePixelRatio || 1, RENDER_DPR_CAP);
+  const dpr = window.devicePixelRatio || 1;
   const layoutResult = layout({
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
