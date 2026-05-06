@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate:og": "node scripts/generate-og.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
