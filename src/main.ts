@@ -253,9 +253,24 @@ async function boot() {
   if (prefersReducedMotion()) return;
 
   let started = false;
+  // Auto-start fallback: if the visitor doesn't click within 5s the
+  // simulation begins on its own so the canvas isn't a dead image for
+  // anyone who didn't notice the cursor:pointer affordance.
+  let autoStartTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    if (!started) {
+      run?.start();
+      started = true;
+    }
+    autoStartTimer = null;
+  }, 5000);
+
   canvas.addEventListener('click', () => {
     if (!started) {
-      // First click: start the simulation in the current theme.
+      // First click: cancel the auto-start timer and start now.
+      if (autoStartTimer !== null) {
+        clearTimeout(autoStartTimer);
+        autoStartTimer = null;
+      }
       run?.start();
       started = true;
       return;
