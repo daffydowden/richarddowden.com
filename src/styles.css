@@ -1,0 +1,79 @@
+@font-face {
+  font-family: 'Anton';
+  src: url('/fonts/anton-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00B7;
+}
+@font-face {
+  font-family: 'Abril Fatface';
+  src: url('/fonts/abril-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0020-007E, U+00B7;
+}
+
+:root {
+  /* Theme tokens are written by main.ts; these are the boot defaults
+     before JS runs (used by SSR / no-JS / WebGL-fail visitors). */
+  --field: oklch(86% 0.018 165);   /* dusty celadon */
+  --mark:  oklch(18% 0.012 165);   /* near-black, tinted toward field */
+}
+
+@media (prefers-color-scheme: dark) {
+  /* The brief says theme is fixed; do NOT add dark-mode swap. */
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--field);
+  color: var(--mark);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Offscreen H1 for assistive tech. The canvas is the visible artifact and
+   is aria-hidden. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  display: block;
+  /* Subtle hint that the canvas is interactive: pointer cursor without
+     any visible UI. First click starts the simulation; subsequent
+     clicks cycle theme. */
+  cursor: pointer;
+}
+
+/* Static fallback image. Same artifact as og.png — a frozen render of the
+   T=0 canvas state. Used in two places: <noscript> for no-JS visitors,
+   and main.ts injects an <img.fallback> when WebGL is unavailable. */
+.fallback {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  object-fit: cover;
+  display: block;
+}
+
+/* When main.ts can't initialize WebGL it adds .webgl-unavailable to <body>
+   and appends an <img.fallback>. Hide the canvas so the fallback shows
+   alone. */
+body.webgl-unavailable #canvas { display: none; }
