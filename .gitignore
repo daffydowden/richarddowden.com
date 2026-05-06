@@ -8,3 +8,4 @@ dist/
 .worktrees/
 test-results/
 playwright-report/
+scripts/inspect.mjs
