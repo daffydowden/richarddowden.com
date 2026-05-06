@@ -178,22 +178,18 @@ interface Run {
   stop: () => void;
 }
 
-function uploadGlyphMap(
-  gl: WebGL2RenderingContext,
-  width: number,
-  height: number,
-  data: Uint8Array,
-): WebGLTexture {
-  const tex = gl.createTexture();
-  if (!tex) throw new Error('createTexture returned null');
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
+/**
+ * Interleave state (R) and glyphMap (G) into a packed RG8 byte buffer.
+ * The ping-pong textures hold both channels so the render shader fetches
+ * them in a single texture read.
+ */
+function packStateGlyph(state: Uint8Array, glyphMap: Uint8Array): Uint8Array {
+  const out = new Uint8Array(state.length * 2);
+  for (let i = 0; i < state.length; i++) {
+    out[i * 2] = state[i]!;
+    out[i * 2 + 1] = glyphMap[i]!;
+  }
+  return out;
 }
 
 function startRun(
@@ -275,14 +271,13 @@ function startRun(
 
   let ping: ReturnType<typeof createPingPong>;
   try {
-    ping = createPingPong(gl, gridW, gridH, state);
+    ping = createPingPong(gl, gridW, gridH, packStateGlyph(state, glyphMap));
   } catch (e) {
     console.error('ping-pong setup failed:', e);
     showFallback();
     return null;
   }
   const atlasTex = uploadTexture(gl, atlas.canvas as TexImageSource);
-  const glyphMapTex = uploadGlyphMap(gl, gridW, gridH, glyphMap);
 
   function bindQuad(program: WebGLProgram) {
     const loc = gl.getAttribLocation(program, 'aPos');
@@ -319,9 +314,6 @@ function startRun(
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, atlasTex);
     gl.uniform1i(gl.getUniformLocation(renderProgram, 'uAtlas'), 1);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, glyphMapTex);
-    gl.uniform1i(gl.getUniformLocation(renderProgram, 'uGlyphMap'), 2);
     gl.uniform2f(gl.getUniformLocation(renderProgram, 'uGridSize'), gridW, gridH);
     gl.uniform1f(gl.getUniformLocation(renderProgram, 'uAtlasLen'), atlas.alphabetLength);
     gl.uniform3f(
@@ -339,7 +331,6 @@ function startRun(
     gl.deleteProgram(stepProgram);
     gl.deleteProgram(renderProgram);
     gl.deleteTexture(atlasTex);
-    gl.deleteTexture(glyphMapTex);
     gl.deleteTexture(ping.read.tex);
     gl.deleteTexture(ping.write.tex);
     gl.deleteFramebuffer(ping.read.fb);

@@ -78,21 +78,22 @@ export interface PingPong {
 }
 
 /**
- * Two single-channel R8 textures wrapped in framebuffers, swapped each step.
- * R8 is enough for 0|1; for 3-state rules (Brian's Brain) bump to RG8 or
- * pack states in two bits.
+ * Two RG8 textures wrapped in framebuffers, swapped each step.
+ * R = cell state (alive=255 / dying=128 / dead=0).
+ * G = glyph index (byte). G is preserved across steps by the step shader,
+ * so it only needs to be seeded once per ping-pong texture.
  */
 export function createPingPong(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
-  initial: Uint8Array,
+  initial: Uint8Array, // packed RG: [s0,g0, s1,g1, ...] length = width*height*2
 ): PingPong {
   function makeAttachment(): { tex: WebGLTexture; fb: WebGLFramebuffer } {
     const tex = gl.createTexture();
     if (!tex) throw new Error('createTexture returned null');
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, width, height, 0, gl.RG, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -110,10 +111,15 @@ export function createPingPong(
   const a = makeAttachment();
   const b = makeAttachment();
 
-  // Upload initial state into a.tex
-  gl.bindTexture(gl.TEXTURE_2D, a.tex);
+  // Seed both ping-pong textures with the same packed (state, glyph) data.
+  // After step 1 the write target swaps in as read; its G channel must
+  // already be correct because the step shader only writes through what
+  // it reads.
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.UNSIGNED_BYTE, initial);
+  gl.bindTexture(gl.TEXTURE_2D, a.tex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RG, gl.UNSIGNED_BYTE, initial);
+  gl.bindTexture(gl.TEXTURE_2D, b.tex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RG, gl.UNSIGNED_BYTE, initial);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   let read = a;

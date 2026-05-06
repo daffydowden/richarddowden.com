@@ -8,8 +8,9 @@ void main() {
 `;
 
 /**
- * Step shader: reads previous state from uPrev, writes next.
- * Output texture is R8; alive=1.0, dead=0.0, dying=0.5 (for 3-state rules).
+ * Step shader: reads previous state from uPrev (RG8: R=state, G=glyph index),
+ * writes next state to R, preserves glyph index in G unchanged.
+ * State levels: alive=1.0, dead=0.0, dying=0.5 (for 3-state rules).
  *
  * Rule injected via #define RULE_<id>; only one is active per linked program.
  *   RULE_CONWAY        — B3/S23
@@ -28,14 +29,17 @@ uniform vec2 uResolution; // texture dims in cells
 float sampleAt(vec2 cell) {
   // Clamp to edges; CA does not wrap.
   vec2 uv = (cell + 0.5) / uResolution;
-  return texture(uPrev, uv).r > 0.75 ? 1.0
-       : texture(uPrev, uv).r > 0.25 ? 0.5
-       : 0.0;
+  float v = texture(uPrev, uv).r;
+  return v > 0.75 ? 1.0 : v > 0.25 ? 0.5 : 0.0;
 }
 
 void main() {
   vec2 cell = floor(vUv * uResolution);
-  float c = sampleAt(cell);
+  vec2 uvC = (cell + 0.5) / uResolution;
+  vec2 packed = texture(uPrev, uvC).rg;
+  float vC = packed.r;
+  float c = vC > 0.75 ? 1.0 : vC > 0.25 ? 0.5 : 0.0;
+  float glyph = packed.g; // preserve unchanged
 
   // Count live (==1.0) neighbors; ignore dying.
   float n = 0.0;
@@ -77,13 +81,13 @@ void main() {
   }
 #endif
 
-  outColor = vec4(next, 0.0, 0.0, 1.0);
+  outColor = vec4(next, glyph, 0.0, 1.0);
 }
 `;
 
 /**
- * Render shader: reads current state, samples glyph atlas at the per-cell
- * position derived from the cell's coordinate hash.
+ * Render shader: reads current state + glyph index from a single packed
+ * RG8 texture, samples glyph atlas at the per-cell glyph offset.
  *
  * Output: opaque mark on transparent background; the canvas sits over
  * the field-colored body element, so transparency = field color.
@@ -93,9 +97,8 @@ precision highp float;
 precision highp sampler2D;
 in vec2 vUv;
 out vec4 outColor;
-uniform sampler2D uState;       // R8: 1.0 alive, 0.5 dying, 0.0 dead
+uniform sampler2D uState;       // RG8: R=state (1/0.5/0), G=glyph index byte
 uniform sampler2D uAtlas;       // RGBA atlas, glyphs side by side
-uniform sampler2D uGlyphMap;    // R8: glyph index (byte) per cell
 uniform vec2 uGridSize;         // cells across, cells down
 uniform float uAtlasLen;        // number of glyphs in atlas
 uniform vec3 uMarkColor;        // sRGB-linear of the mark color
@@ -110,13 +113,13 @@ void main() {
   vec2 cellFlipped = vec2(cell.x, uGridSize.y - 1.0 - cell.y);
   vec2 uvCell = (cellFlipped + 0.5) / uGridSize;
 
-  float state = texture(uState, uvCell).r;
+  vec2 packed = texture(uState, uvCell).rg;
+  float state = packed.r;
   if (state < 0.25) discard;
 
-  // Glyph index per cell from the glyph map texture. R8 normalises
-  // 0..255 to 0..1, so we de-normalise by multiplying by 255 and
-  // floor-clamp to stay within the atlas.
-  float glyphIdx = floor(texture(uGlyphMap, uvCell).r * 255.0 + 0.5);
+  // R8 normalises 0..255 to 0..1, so de-normalise by multiplying by 255
+  // and floor-clamp to stay within the atlas.
+  float glyphIdx = floor(packed.g * 255.0 + 0.5);
   glyphIdx = min(glyphIdx, uAtlasLen - 1.0);
 
   float u = (glyphIdx + inCell.x) / uAtlasLen;
