@@ -28,9 +28,10 @@ export function rasterizeSeed(input: SeedInput): Uint8Array {
   const { lines, width, height, fontSizePx, cellSize } = input;
   const create = input.createCanvas ?? defaultCreate;
   const canvas = create(width, height);
-  const ctx = (canvas as HTMLCanvasElement).getContext('2d', {
-    willReadFrequently: true,
-  }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  const ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null =
+    typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas
+      ? canvas.getContext('2d')
+      : (canvas as HTMLCanvasElement).getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('rasterizeSeed: 2D canvas context unavailable');
 
   // Field is transparent; mark is opaque black. We threshold on alpha.

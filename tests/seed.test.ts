@@ -61,6 +61,18 @@ describe('rasterizeSeed', () => {
     expect(buf.every((b) => b === 0)).toBe(true);
   });
 
+  it('empty lines array produces a buffer of all zeros', () => {
+    const buf = rasterizeSeed({
+      lines: [],
+      width: 64,
+      height: 64,
+      fontSizePx: 48,
+      cellSize: 8,
+      createCanvas: makeTestCanvas,
+    });
+    expect(buf.every((b) => b === 0)).toBe(true);
+  });
+
   it('two lines stack vertically', () => {
     const buf = rasterizeSeed({
       lines: ['R', 'D'],
