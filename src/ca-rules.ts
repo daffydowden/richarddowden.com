@@ -13,11 +13,11 @@ export const briansBrain: RuleFn = (state, n) => {
   return n === 2 ? 1 : 0;
 };
 
+const DAY_NIGHT_B = new Set([3, 6, 7, 8]);
+const DAY_NIGHT_S = new Set([3, 4, 6, 7, 8]);
 export const dayAndNight: RuleFn = (state, n) => {
-  const B = new Set([3, 6, 7, 8]);
-  const S = new Set([3, 4, 6, 7, 8]);
-  if (state === 1) return S.has(n) ? 1 : 0;
-  return B.has(n) ? 1 : 0;
+  if (state === 1) return DAY_NIGHT_S.has(n) ? 1 : 0;
+  return DAY_NIGHT_B.has(n) ? 1 : 0;
 };
 
 /**

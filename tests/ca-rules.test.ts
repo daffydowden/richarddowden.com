@@ -97,6 +97,20 @@ describe('custom (tuned for richarddowden.com)', () => {
     }
     expect(births).toBeGreaterThan(0);
   });
+
+  it('birth on exactly n=3 and n=6 (B36)', () => {
+    const expected = [0, 0, 0, 1, 0, 0, 1, 0, 0];
+    for (let n = 0; n <= 8; n++) {
+      expect(custom(0, n)).toBe(expected[n]);
+    }
+  });
+
+  it('survival on exactly n=2, 3, 4, 8 (S2348)', () => {
+    const expected = [0, 0, 1, 1, 1, 0, 0, 0, 1];
+    for (let n = 0; n <= 8; n++) {
+      expect(custom(1, n)).toBe(expected[n]);
+    }
+  });
 });
 
 describe('RULES registry', () => {
