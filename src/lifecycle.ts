@@ -17,7 +17,9 @@ export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
   let rafId: number | null = null;
   let lastFrameTime = performance.now();
   let lastStepTime = lastFrameTime;
-  let stepInterval = 1000 / cfg.initialGenerationsPerSecond;
+  const initialInterval = 1000 / cfg.initialGenerationsPerSecond;
+  const minInterval = 1000 / cfg.minGenerationsPerSecond;
+  let stepInterval = initialInterval;
   let elapsedSinceStart = 0;
   let frameCount = 0;
   let fpsAccumulator = 0;
@@ -28,25 +30,25 @@ export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
     lastFrameTime = now;
     elapsedSinceStart += dt;
 
-    cfg.render();
-
+    // Render is coupled to step: between generations the output pixels are
+    // identical (no inter-frame fade), so calling render() per RAF is pure
+    // waste. Drives ~10x fewer GPU draws on a 60Hz display at 6 gen/s.
     if (elapsedSinceStart >= cfg.settlingMs && now - lastStepTime >= stepInterval) {
       cfg.step();
+      cfg.render();
       lastStepTime = now;
     }
 
-    // FPS tracking: sample over 1s windows.
+    // FPS tracking: sample over 1s windows. Symmetric damper — if the host
+    // is keeping up we ramp step rate back toward the initial target.
     frameCount++;
     fpsAccumulator += dt;
     if (fpsAccumulator >= 1000) {
       const fps = (frameCount * 1000) / fpsAccumulator;
       if (fps < 30) {
-        // Halve the step rate (slow CA), don't touch render.
-        const newGps = Math.max(
-          cfg.minGenerationsPerSecond,
-          (1000 / stepInterval) / 2,
-        );
-        stepInterval = 1000 / newGps;
+        stepInterval = Math.min(minInterval, stepInterval * 2);
+      } else if (fps > 50 && stepInterval > initialInterval) {
+        stepInterval = Math.max(initialInterval, stepInterval / 1.5);
       }
       frameCount = 0;
       fpsAccumulator = 0;
@@ -65,6 +67,9 @@ export function startLifecycle(cfg: LifecycleConfig): LifecycleHandle {
     if (rafId === null && !stopped) {
       lastFrameTime = performance.now();
       lastStepTime = lastFrameTime;
+      // The browser may have cleared the drawing buffer while hidden;
+      // repaint immediately so the canvas isn't blank on return.
+      cfg.render();
       rafId = requestAnimationFrame(loop);
     }
   }
