@@ -38,9 +38,6 @@ function showFallback() {
 }
 
 async function boot() {
-  // Wait for fonts so the rasterized seed measures with the intended face.
-  // (Until T12 self-hosts the display family, this awaits whatever the
-  // browser already had.)
   if (document.fonts && document.fonts.ready) {
     await document.fonts.ready;
   }
@@ -110,7 +107,14 @@ async function boot() {
     gl.STATIC_DRAW,
   );
 
-  const ping = createPingPong(gl, gridW, gridH, initial);
+  let ping: ReturnType<typeof createPingPong>;
+  try {
+    ping = createPingPong(gl, gridW, gridH, initial);
+  } catch (e) {
+    console.error('ping-pong setup failed:', e);
+    showFallback();
+    return;
+  }
   const atlasTex = uploadTexture(gl, atlas.canvas as TexImageSource);
 
   function bindQuad(program: WebGLProgram) {

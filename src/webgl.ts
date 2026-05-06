@@ -22,7 +22,9 @@ export function createBundle(canvas: HTMLCanvasElement): WebGLBundle {
     antialias: false,
     preserveDrawingBuffer: false,
     premultipliedAlpha: false,
-    alpha: false,
+    // alpha:true so the canvas composites over the field-colored <body>;
+    // the render shader emits straight-alpha vec4(uMarkColor, glyphAlpha).
+    alpha: true,
   });
   if (!gl) throw new WebGLNotAvailable();
   return { gl, canvas };

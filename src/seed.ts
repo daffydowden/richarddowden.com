@@ -65,7 +65,8 @@ export function rasterizeSeed(input: SeedInput): Uint8Array {
       const py = cy * cellSize + Math.floor(cellSize / 2);
       const i = (py * width + px) * 4;
       const alpha = data[i + 3] ?? 0;
-      out[cy * cellsW + cx] = alpha > 128 ? 1 : 0;
+      // 255 (not 1) so R8 texture samples as 1.0 in GLSL (255/255).
+      out[cy * cellsW + cx] = alpha > 128 ? 255 : 0;
     }
   }
   return out;

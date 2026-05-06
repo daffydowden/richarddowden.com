@@ -31,7 +31,7 @@ describe('rasterizeSeed', () => {
       createCanvas: makeTestCanvas,
     });
     let live = 0;
-    for (const b of buf) if (b === 1) live++;
+    for (const b of buf) if (b !== 0) live++;
     expect(live).toBeGreaterThan(0);
   });
 
@@ -88,7 +88,7 @@ describe('rasterizeSeed', () => {
     for (let y = 0; y < cellsH; y++) {
       for (let x = 0; x < cellsW; x++) {
         const idx = y * cellsW + x;
-        if (buf[idx] === 1) {
+        if (buf[idx] !== 0) {
           if (y < cellsH / 2) topLive++;
           else bottomLive++;
         }
